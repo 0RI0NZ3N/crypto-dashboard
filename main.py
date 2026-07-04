@@ -257,11 +257,31 @@ def fetch_signals_from_db():
             database=database,
             connect_timeout=3
         )
+        
+        # Auto-initialize the table if it does not exist yet
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS active_signals (
+                id SERIAL PRIMARY KEY,
+                group_name VARCHAR(255),
+                ticker VARCHAR(50),
+                trade_type VARCHAR(50),
+                entry_min DOUBLE PRECISION,
+                entry_max DOUBLE PRECISION,
+                stop_loss DOUBLE PRECISION,
+                raw_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        cursor.close()
+
         query = "SELECT * FROM active_signals ORDER BY created_at DESC"
         df = pd.read_sql(query, conn)
         conn.close()
         return df
     except Exception as e:
+        # Keep the error visible so we can confirm success, but we will clean this up later
         st.error(f"Database connection/query error: {e}")
         return None
 
