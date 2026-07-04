@@ -261,7 +261,8 @@ def fetch_signals_from_db():
         df = pd.read_sql(query, conn)
         conn.close()
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"Database connection/query error: {e}")
         return None
 
 # Generate premium, consistent synthetic data representing a live dashboard system
