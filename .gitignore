@@ -1,0 +1,26 @@
+# Environment files
+.env
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Telegram session files (contains private login tokens)
+*.session
+*.session-journal
+
+# Python virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+.gemini/

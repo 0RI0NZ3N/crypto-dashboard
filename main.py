@@ -22,10 +22,10 @@ st.markdown("""
     .metric-value { font-size: 36px; font-weight: 700; color: #0F172A; }
     .metric-delta { font-size: 13px; font-weight: 600; color: #10B981; background-color: #E6F4EA; padding: 4px 8px; border-radius: 20px; display: inline-block; }
     </style>
-""", unsafe_allow_index=True)
+""", unsafe_allow_html=True)
 
 # Main Title Area
-st.markdown('<div class="main-title">Product overview</div>', unsafe_allow_index=True)
+st.markdown('<div class="main-title">Product overview</div>', unsafe_allow_html=True)
 
 def get_db_connection():
     return psycopg2.connect(
@@ -46,7 +46,7 @@ with col1:
             <div class="metric-value">$128k</div>
             <div class="metric-delta">↑ 36.8% <span style='color:#64748B; font-weight:400;'>vs last year</span></div>
         </div>
-    """, unsafe_allow_index=True)
+    """, unsafe_allow_html=True)
 
 with col2:
     st.markdown("""
@@ -55,10 +55,10 @@ with col2:
             <div class="metric-value">512</div>
             <div class="metric-delta" style='color:#EF4444; background-color:#FCE8E6;'>↓ 12.4% <span style='color:#64748B; font-weight:400;'>vs last week</span></div>
         </div>
-    """, unsafe_allow_index=True)
+    """, unsafe_allow_html=True)
 
 # Live Signals Section
-st.markdown('<div style="font-size: 20px; font-weight: 600; color: #1E293B; margin-bottom: 12px;">Active Signals Activity</div>', unsafe_allow_index=True)
+st.markdown('<div style="font-size: 20px; font-weight: 600; color: #1E293B; margin-bottom: 12px;">Active Signals Activity</div>', unsafe_allow_html=True)
 
 try:
     conn = get_db_connection()
