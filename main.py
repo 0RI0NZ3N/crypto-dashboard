@@ -22,9 +22,21 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
-    html, body, [class*="css"] {
+    /* Force main background and text colors to avoid clashes in dark/light browser modes */
+    .stApp {
+        background-color: #F8F9FA !important;
+        color: #0F172A !important;
+    }
+    
+    /* Force dark text color on standard headings and markdown text */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp span, .stApp label, .stApp li, .stApp td, .stApp th {
+        color: #0F172A !important;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background-color: #F8F9FA;
+    }
+    
+    /* Keep the helper subtitle muted gray */
+    .stApp .subtitle {
+        color: #64748B !important;
     }
     
     /* Main Layout Tweaks */
@@ -46,13 +58,13 @@ st.markdown("""
     .main-title {
         font-size: 28px;
         font-weight: 700;
-        color: #0F172A;
+        color: #0F172A !important;
         letter-spacing: -0.5px;
     }
     .subtitle {
         font-size: 14px;
         font-weight: 500;
-        color: #64748B;
+        color: #64748B !important;
         margin-top: 4px;
     }
     .status-badge {
@@ -65,19 +77,19 @@ st.markdown("""
         gap: 6px;
     }
     .status-live {
-        background-color: #E6F4EA;
-        color: #10B981;
-        border: 1px solid #A7F3D0;
+        background-color: #E6F4EA !important;
+        color: #10B981 !important;
+        border: 1px solid #A7F3D0 !important;
     }
     .status-mock {
-        background-color: #FEF3C7;
-        color: #D97706;
-        border: 1px solid #FDE68A;
+        background-color: #FEF3C7 !important;
+        color: #D97706 !important;
+        border: 1px solid #FDE68A !important;
     }
     
     /* Premium Glassmorphic Cards */
     .premium-card {
-        background-color: #FFFFFF;
+        background-color: #FFFFFF !important;
         padding: 24px;
         border-radius: 16px;
         box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.02);
@@ -89,12 +101,17 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0px 8px 30px rgba(0, 0, 0, 0.04);
     }
+    .premium-card, .premium-card * {
+        color: #0F172A !important;
+    }
     
     /* Accent Gradient Card */
     .accent-card {
-        background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-        color: #FFFFFF !important;
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
         border: none !important;
+    }
+    .accent-card, .accent-card * {
+        color: #FFFFFF !important;
     }
     .accent-card .metric-title {
         color: rgba(255, 255, 255, 0.8) !important;
@@ -111,7 +128,7 @@ st.markdown("""
     .metric-title {
         font-size: 12px;
         font-weight: 700;
-        color: #64748B;
+        color: #64748B !important;
         text-transform: uppercase;
         letter-spacing: 0.75px;
         margin-bottom: 8px;
@@ -119,7 +136,7 @@ st.markdown("""
     .metric-value {
         font-size: 32px;
         font-weight: 700;
-        color: #0F172A;
+        color: #0F172A !important;
         line-height: 1.1;
     }
     .metric-delta {
@@ -132,12 +149,12 @@ st.markdown("""
         margin-top: 10px;
     }
     .delta-up {
-        color: #10B981;
-        background-color: #E6F4EA;
+        color: #10B981 !important;
+        background-color: #E6F4EA !important;
     }
     .delta-down {
-        color: #EF4444;
-        background-color: #FCE8E6;
+        color: #EF4444 !important;
+        background-color: #FCE8E6 !important;
     }
     
     /* Custom tab indicators overrides */
@@ -145,11 +162,11 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
         font-size: 15px;
         font-weight: 600;
-        color: #64748B;
-        background-color: transparent;
-        border: none;
-        border-bottom: 2px solid transparent;
-        padding: 10px 20px;
+        color: #64748B !important;
+        background-color: transparent !important;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        padding: 10px 20px !important;
         transition: all 0.2s ease;
     }
     div[data-testid="stTabs"] button[aria-selected="true"] {
@@ -157,7 +174,18 @@ st.markdown("""
         border-bottom: 2px solid #10B981 !important;
     }
     div[data-testid="stTabs"] button:hover {
-        color: #10B981;
+        color: #10B981 !important;
+    }
+    
+    /* Custom selectbox and text inputs contrast */
+    div[data-baseweb="select"] *, div[data-baseweb="select"] {
+        color: #0F172A !important;
+        background-color: #FFFFFF !important;
+    }
+    .stTextInput input {
+        color: #0F172A !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
     }
     
     /* Custom data tables styling */
@@ -181,8 +209,8 @@ st.markdown("""
     .coin-badge {
         font-size: 14px;
         font-weight: 700;
-        color: #0F172A;
-        background-color: #F1F5F9;
+        color: #0F172A !important;
+        background-color: #F1F5F9 !important;
         padding: 6px 12px;
         border-radius: 8px;
     }
@@ -194,12 +222,12 @@ st.markdown("""
         text-transform: uppercase;
     }
     .type-long {
-        background-color: #D1FAE5;
-        color: #065F46;
+        background-color: #D1FAE5 !important;
+        color: #065F46 !important;
     }
     .type-short {
-        background-color: #FEE2E2;
-        color: #991B1B;
+        background-color: #FEE2E2 !important;
+        color: #991B1B !important;
     }
     
     </style>
@@ -428,10 +456,28 @@ def render_circular_gauge(percentage, label, color="#10B981"):
 
 
 # ==========================================
-# MAIN PAGE HEADER
+# MAIN PAGE HEADER & WARNING BANNER
 # ==========================================
 
-db_badge = f'<span class="status-badge status-live">🟢 Live Database Link</span>' if is_live_db else f'<span class="status-badge status-mock">⚠️ Offline Fallback Mode</span>'
+db_badge = f'<span class="status-badge status-live">🟢 Live Database Link</span>' if is_live_db else f'<span class="status-badge status-mock">⚠️ Offline Demo Mode</span>'
+
+if not is_live_db:
+    st.markdown("""
+        <div style="background-color: #FFFBEB; border-left: 4px solid #D97706; padding: 16px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0px 2px 10px rgba(217, 119, 6, 0.05); border-top: 1px solid #FDE68A; border-right: 1px solid #FDE68A; border-bottom: 1px solid #FDE68A;">
+            <div style="display: flex; gap: 10px; align-items: start;">
+                <span style="font-size: 18px; line-height: 1;">⚠️</span>
+                <div>
+                    <strong style="color: #92400E; font-size: 14px; font-family: 'Inter', sans-serif;">Viewing Offline Simulated Data</strong>
+                    <div style="font-size: 13px; color: #B45309; margin-top: 4px; font-family: 'Inter', sans-serif; line-height: 1.4;">
+                        The dashboard is currently running in fallback mode because it could not connect to your remote Aiven PostgreSQL database (operation timed out).
+                        The channel names you see below (e.g. <em>Apex Crypto Signals</em>) are simulated placeholders.
+                        <br/><br/>
+                        <strong>To display your real Telegram groups and signals:</strong> Please whitelist your local computer's IP address in your Aiven Database Console firewall under "Allowed IPs" so the app can connect.
+                    </div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 st.markdown(f"""
     <div class="header-container">
