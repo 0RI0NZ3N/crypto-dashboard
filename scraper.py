@@ -4,6 +4,8 @@ import datetime
 import http.server
 import socketserver
 import threading
+import urllib.request
+import json
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import psycopg2
@@ -52,6 +54,98 @@ threading.Thread(target=run_http_server, daemon=True).start()
 
 # Use StringSession for cloud deployment without database file requirements
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+def fetch_binance_price(ticker):
+    """
+    Fetch the current live price of a ticker from the Binance public API
+    """
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={ticker}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            return float(data['price'])
+    except Exception as e:
+        print(f"⚠️ Error fetching Binance price for {ticker}: {e}")
+        return None
+
+def analyze_opinion_sentiment(text):
+    """
+    Analyze the sentiment bias (LONG vs SHORT) of a conversational text post
+    using a weighted keyword mapping.
+    """
+    text_upper = text.upper()
+    
+    bull_words = ["BUY", "LONG", "BULLISH", "BREAKOUT", "SUPPORT", "PUMP", "UPWARD", "MOON", "ACCUMULATE", "CALL", "TARGET", "TP"]
+    bear_words = ["SELL", "SHORT", "BEARISH", "REJECTION", "BREAKDOWN", "RESISTANCE", "DUMP", "DOWNWARD", "DROP", "CRASH"]
+    
+    bull_score = sum(text_upper.count(word) for word in bull_words)
+    bear_score = sum(text_upper.count(word) for word in bear_words)
+    
+    if bull_score > bear_score:
+        return "LONG"
+    elif bear_score > bull_score:
+        return "SHORT"
+    return None
+
+def parse_opinion_text(text):
+    """
+    Fallback parser that ingests conversational trader opinions,
+    fetches live price from Binance, and generates structured signals on the fly.
+    """
+    try:
+        text_upper = text.upper()
+        
+        # 1. Identify coin pair
+        ticker = None
+        for coin in ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "LINK", "AVAX"]:
+            if coin in text_upper:
+                ticker = f"{coin}USDT"
+                break
+        
+        if not ticker:
+            # Look for general uppercase symbol ending with USDT
+            match = re.search(r'\b([A-Z]{2,10})USDT\b', text_upper)
+            if match:
+                ticker = match.group(0)
+            else:
+                # Look for hashtag tickers, e.g., #NEAR
+                match_hash = re.search(r'#([A-Z]{2,10})\b', text_upper)
+                if match_hash:
+                    ticker = f"{match_hash.group(1)}USDT"
+                else:
+                    return None
+                    
+        # 2. Extract direction sentiment bias
+        trade_type = analyze_opinion_sentiment(text)
+        if not trade_type:
+            return None
+            
+        # 3. Query current price from Binance
+        live_price = fetch_binance_price(ticker)
+        if not live_price:
+            return None
+            
+        # 4. Generate structured targets (3% Stop Loss / 6% Take Profit)
+        if trade_type == "LONG":
+            entry_min = live_price
+            entry_max = live_price * 1.005
+            stop_loss = live_price * 0.97
+        else:
+            entry_min = live_price * 0.995
+            entry_max = live_price
+            stop_loss = live_price * 1.03
+            
+        return {
+            "ticker": ticker,
+            "trade_type": trade_type,
+            "entry_min": round(entry_min, 4),
+            "entry_max": round(entry_max, 4),
+            "stop_loss": round(stop_loss, 4),
+            "raw_message": f"[OPINION DIGESTED] {text}"
+        }
+    except Exception:
+        return None
 
 def parse_signal_text(text):
     """
@@ -172,6 +266,8 @@ async def my_event_handler(event):
     channel_title = getattr(channel, 'title', 'Unknown Group') if channel else 'Unknown Group'
     
     parsed = parse_signal_text(raw_text)
+    if not parsed:
+        parsed = parse_opinion_text(raw_text)
     if parsed:
         try:
             if not DB_PARAMS["host"]:
@@ -212,6 +308,8 @@ async def scrape_history():
                     if not message.text:
                         continue
                     parsed = parse_signal_text(message.text)
+                    if not parsed:
+                        parsed = parse_opinion_text(message.text)
                     if parsed:
                         # Check if message already exists to avoid duplicates
                         cursor.execute("SELECT id FROM active_signals WHERE raw_message = %s", (message.text,))
