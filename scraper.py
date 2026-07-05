@@ -1,6 +1,10 @@
 import os
 import re
+import http.server
+import socketserver
+import threading
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 import psycopg2
 from dotenv import load_dotenv
 
@@ -10,6 +14,7 @@ load_dotenv()
 # --- CONFIGURATION ---
 API_ID = int(os.environ.get("TELEGRAM_API_ID", 0))
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+SESSION_STRING = os.environ.get("TELEGRAM_SESSION_STRING", "")
 
 CHANNELS_STR = os.environ.get("TELEGRAM_CHANNELS", "")
 CHANNELS = [int(c.strip()) for c in CHANNELS_STR.split(",") if c.strip()]
@@ -26,7 +31,26 @@ DB_PARAMS = {
 if not API_ID or not API_HASH:
     raise ValueError("TELEGRAM_API_ID or TELEGRAM_API_HASH not set in environment or .env file.")
 
-client = TelegramClient('session_dashboard', API_ID, API_HASH)
+# Run a simple HTTP health check server for Render compatibility
+def run_http_server():
+    port = int(os.environ.get("PORT", 8080))
+    class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, format, *args):
+            pass  # Suppress logging
+
+    with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
+        print(f"📡 Web server listening on port {port} for health checks...")
+        httpd.serve_forever()
+
+threading.Thread(target=run_http_server, daemon=True).start()
+
+# Use StringSession for cloud deployment without database file requirements
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 def parse_signal_text(text):
     """
