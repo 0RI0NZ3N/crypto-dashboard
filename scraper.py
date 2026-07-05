@@ -82,11 +82,6 @@ def _http_get(url: str, timeout: int = 5) -> dict | None:
     except Exception:
         return None
 
-def _from_binance(ticker: str) -> float | None:
-    data = _http_get(f"https://api.binance.com/api/v3/ticker/price?symbol={ticker}")
-    if data and "price" in data:
-        return float(data["price"])
-    return None
 
 def _from_bybit(ticker: str) -> float | None:
     # Bybit linear perpetuals use the same symbol format (BTCUSDT, ETHUSDT, etc.)
@@ -113,7 +108,7 @@ def _from_okx(ticker: str) -> float | None:
 def fetch_live_price(ticker: str) -> float | None:
     """
     Fetch the current market price for a USDT-margined pair.
-    Tries Binance first, falls back to Bybit, then OKX.
+    Primary: Bybit — Fallback: OKX.
     Results are cached for PRICE_CACHE_TTL seconds.
     """
     now = time.time()
@@ -121,9 +116,8 @@ def fetch_live_price(ticker: str) -> float | None:
         return _price_cache[ticker]
 
     sources = [
-        ("Binance", _from_binance),
-        ("Bybit",   _from_bybit),
-        ("OKX",     _from_okx),
+        ("Bybit", _from_bybit),
+        ("OKX",   _from_okx),
     ]
 
     for name, fn in sources:
