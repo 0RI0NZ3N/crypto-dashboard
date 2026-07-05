@@ -5,6 +5,7 @@ import numpy as np
 import os
 import datetime
 import re
+import textwrap
 from dotenv import load_dotenv
 
 # Set page config to match premium wide dark look
@@ -18,10 +19,12 @@ st.set_page_config(
 # Load environment variables
 load_dotenv()
 
-# ==========================================
-# ADVANCED STYLING SYSTEM (CYBERPUNK TERMINAL)
-# ==========================================
-st.markdown("""
+# Helper function to render HTML cleanly without markdown indentation issues
+def render_html(html_str):
+    st.markdown(textwrap.dedent(html_str), unsafe_allow_html=True)
+
+# Inject custom Google Font and advanced UI CSS styles for glassmorphic cards
+render_html("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
     
@@ -294,7 +297,7 @@ st.markdown("""
     }
     
     </style>
-""", unsafe_allow_html=True)
+""")
 
 
 # ==========================================
@@ -530,33 +533,12 @@ else:
 
 
 # ==========================================
-# RENDER GAUGE WIDGET
-# ==========================================
-def render_circular_gauge(percentage, label, color="#10B981"):
-    circumference = 282.7
-    offset = circumference - (percentage / 100.0) * circumference
-    svg_html = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; background: rgba(17, 23, 41, 0.6); border-radius: 12px; border: 1px solid rgba(31, 41, 55, 0.7); width: 100%;">
-        <svg width="90" height="90" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#1F2937" stroke-width="8" />
-            <circle cx="50" cy="50" r="45" fill="none" stroke="{color}" stroke-width="8" 
-                    stroke-dasharray="{circumference}" stroke-dashoffset="{offset}" stroke-linecap="round" 
-                    transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 0.5s ease-in-out;" />
-            <text x="50" y="56" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="16" font-weight="800" fill="#FFFFFF">{percentage}%</text>
-        </svg>
-        <span style="font-family: 'Outfit', sans-serif; font-size: 11px; font-weight: 700; color: #64748B; margin-top: 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.75px;">{label}</span>
-    </div>
-    """
-    return svg_html
-
-
-# ==========================================
 # APPLICATION HEADER
 # ==========================================
 
 db_badge = '<span class="status-badge status-live">🟢 Live Database Linked</span>' if is_live_db else '<span class="status-badge status-mock">⚠️ Offline Demo Mode</span>'
 
-st.markdown(f"""
+render_html(f"""
     <div class="header-container">
         <div>
             <div class="main-title">Consolidated Signals Terminal</div>
@@ -566,7 +548,7 @@ st.markdown(f"""
             {db_badge}
         </div>
     </div>
-""", unsafe_allow_html=True)
+""")
 
 
 # ==========================================
@@ -600,40 +582,40 @@ with tab_terminal:
     total_parsed_all = len(df_active) + len(df_hist)
     
     with col_stat1:
-        st.markdown(f"""
+        render_html("""
             <div class="premium-card accent-card">
                 <div class="metric-title">Active Signals</div>
                 <div class="metric-value">{active_cnt} Trades</div>
                 <div class="metric-delta delta-up">Monitoring Live</div>
             </div>
-        """, unsafe_allow_html=True)
+        """.format(active_cnt=active_cnt))
         
     with col_stat2:
-        st.markdown(f"""
+        render_html("""
             <div class="premium-card">
                 <div class="metric-title">Signal Confluences</div>
                 <div class="metric-value">{confluence_count} Token Pairs</div>
                 <div class="metric-delta delta-up">Multiple Consensus</div>
             </div>
-        """, unsafe_allow_html=True)
+        """.format(confluence_count=confluence_count))
         
     with col_stat3:
-        st.markdown(f"""
+        render_html("""
             <div class="premium-card">
                 <div class="metric-title">Overall Accuracy</div>
                 <div class="metric-value">{win_rate}%</div>
                 <div class="metric-delta delta-up">Average Win Rate</div>
             </div>
-        """, unsafe_allow_html=True)
+        """.format(win_rate=win_rate))
         
     with col_stat4:
-        st.markdown(f"""
+        render_html("""
             <div class="premium-card">
                 <div class="metric-title">Aggregate Signals</div>
                 <div class="metric-value">{total_parsed_all} Total</div>
                 <div class="metric-delta delta-up">Ingested Signals</div>
             </div>
-        """, unsafe_allow_html=True)
+        """.format(total_parsed_all=total_parsed_all))
         
     # Main Terminal Views
     col_left, col_right = st.columns([7, 5])
@@ -675,7 +657,7 @@ with tab_terminal:
                 avg_leverage = group["leverage"].mean()
                 lev_html = f'<span style="font-size: 12px; color: #94A3B8; margin-left: 12px;">Avg Leverage: <b>{int(avg_leverage)}x</b></span>' if pd.notna(avg_leverage) else ''
                 
-                st.markdown(f"""
+                render_html(f"""
                     <div class="ticket-container">
                         <div class="ticket-header">
                             <div>
@@ -694,7 +676,7 @@ with tab_terminal:
                             {lev_html}
                         </div>
                     </div>
-                """, unsafe_allow_html=True)
+                """)
                 
     with col_right:
         st.subheader("🎯 Quick Gauges")
@@ -717,13 +699,13 @@ with tab_terminal:
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         
         # Average PnL Card
-        st.markdown(f"""
+        render_html(f"""
             <div class="premium-card" style="text-align: center;">
                 <div class="metric-title" style="margin-bottom: 2px;">Average PnL per Trade</div>
                 <div style="font-size: 36px; font-weight: 800; color: {pnl_color};">{"+" if avg_pnl >= 0 else ""}{avg_pnl}%</div>
                 <div style="font-size: 12px; color: #64748B; margin-top: 4px;">Computed across all historical closed positions</div>
             </div>
-        """, unsafe_allow_html=True)
+        """)
 
 
 # ==========================================
@@ -768,7 +750,7 @@ with tab_analytics:
         long_pct = round((long_signals / total_signals) * 100, 1)
         short_pct = round(100.0 - long_pct, 1)
         
-        st.markdown(f"""
+        render_html(f"""
             <div style="background-color: #111827; border-radius: 8px; border: 1px solid #1F2937; padding: 16px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 700;">
                     <span style="color: #10B981;">LONG BIAS: {long_pct}% ({long_signals} signals)</span>
@@ -778,7 +760,7 @@ with tab_analytics:
                     <div style="width: {long_pct}%; height: 100%; background-color: #10B981;"></div>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        """)
     else:
         st.info("No data yet.")
         
@@ -838,36 +820,36 @@ with tab_channels:
         
         with col_podium2: # 2nd place in left/middle column
             if len(df_leaderboard) > 1:
-                st.markdown(f"""
+                render_html(f"""
                     <div class="podium-box podium-2nd">
                         <div style="font-size: 32px;">🥈</div>
                         <div style="font-weight: 800; font-size: 16px; margin-top: 4px; color: #FFFFFF !important;">{p2_name}</div>
                         <div style="font-size: 13px; color: #94A3B8; margin-top: 6px;">Consistency Index: <b>{p2_idx}</b></div>
                         <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p2_win}%</b></div>
                     </div>
-                """, unsafe_allow_html=True)
+                """)
                 
         with col_podium1: # 1st place in center
             if len(df_leaderboard) > 0:
-                st.markdown(f"""
+                render_html(f"""
                     <div class="podium-box podium-1st" style="transform: scale(1.05); margin-top: -6px;">
                         <div style="font-size: 36px;">🥇</div>
                         <div style="font-weight: 800; font-size: 18px; margin-top: 4px; color: #FFFFFF !important;">{p1_name}</div>
                         <div style="font-size: 13px; color: #EA580C; margin-top: 6px;">Consistency Index: <b style="color: #FBBF24;">{p1_idx}</b></div>
                         <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p1_win}%</b></div>
                     </div>
-                """, unsafe_allow_html=True)
+                """)
                 
         with col_podium3: # 3rd place on right
             if len(df_leaderboard) > 2:
-                st.markdown(f"""
+                render_html(f"""
                     <div class="podium-box podium-3rd">
                         <div style="font-size: 32px;">🥉</div>
                         <div style="font-weight: 800; font-size: 16px; margin-top: 4px; color: #FFFFFF !important;">{p3_name}</div>
                         <div style="font-size: 13px; color: #94A3B8; margin-top: 6px;">Consistency Index: <b>{p3_idx}</b></div>
                         <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p3_win}%</b></div>
                     </div>
-                """, unsafe_allow_html=True)
+                """)
                 
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         
@@ -926,10 +908,10 @@ with tab_explorer:
                 col_exp1, col_exp2 = st.columns([7, 5])
                 with col_exp1:
                     st.markdown("<p style='font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.75px; color:#64748B;'>Telegram Raw Transmission</p>", unsafe_allow_html=True)
-                    st.markdown(f'<div class="raw-message-block">{row["raw_message"]}</div>', unsafe_allow_html=True)
+                    render_html(f'<div class="raw-message-block">{row["raw_message"]}</div>')
                 with col_exp2:
                     st.markdown("<p style='font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.75px; color:#64748B;'>Execution Metrics</p>", unsafe_allow_html=True)
-                    st.markdown(f"""
+                    render_html(f"""
                         <div style="background-color: #111827; border: 1px solid #1F2937; border-radius: 8px; padding: 12px; font-size:13px; color:#94A3B8;">
                             Entry Minimum: <b style="color:#F1F5F9; float:right;">{row['entry_min']:.4f}</b><br/>
                             Entry Maximum: <b style="color:#F1F5F9; float:right;">{row['entry_max']:.4f}</b><br/>
@@ -939,4 +921,4 @@ with tab_explorer:
                                 Net Return Rate: <b style="color:{'#10B981' if row['pnl'] >= 0 else '#EF4444'}; float:right;">{'+' if row['pnl'] >= 0 else ''}{row['pnl']}%</b>
                             </div>
                         </div>
-                    """, unsafe_allow_html=True)
+                    """)
