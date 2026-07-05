@@ -81,8 +81,9 @@ def parse_signal_text(text):
             else:
                 ticker = "BTCUSDT"  # Fallback default
                 
-        # Parse all numbers in the text to extract entry prices and SL
-        numbers = [float(n) for n in re.findall(r'\b\d+(?:\.\d+)?\b', text)]
+        # Parse all numbers in the text to extract entry prices and SL (ignoring commas, e.g. 62,800 -> 62800)
+        clean_text = text.replace(",", "")
+        numbers = [float(n) for n in re.findall(r'\b\d+(?:\.\d+)?\b', clean_text)]
         
         # Standard defaults for common tickers to fallback to or compare with
         defaults = {
