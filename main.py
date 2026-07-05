@@ -1,9 +1,3 @@
-This is a smart pivot. Since you are operating out of Ontario, dropping Binance to avoid geo-locking headaches and moving away from Bybit/OKX for better data consistency is exactly the right move for accurate PnL tracking.
-
-I have fully updated your `main.py` file to strip out the old exchange references. The **Funding Rates & Liquidations** panel now specifically highlights **Bitunix** and **Blofin**, and the simulated **System Control Logs** have been updated to reflect the new Blofin/Bitunix fallback pipeline.
-
-Here is your fully updated `main.py` file. You can copy this entirely and overwrite your current file:
-
 ```python
 """
 Signal Intelligence Terminal — v3
