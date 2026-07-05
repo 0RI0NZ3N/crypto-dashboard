@@ -63,21 +63,36 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MULTI-SOURCE LIVE PRICE FETCHER
-# Primary: Blofin — Fallback: Bitunix
-# Uses ccxt for resilient exchange connections without geo-locking issues.
+# Primary: Blofin (CCXT) — Fallback: Bitunix (HTTP) — Failsafe: MEXC (CCXT)
 # ─────────────────────────────────────────────────────────────────────────────
 _price_cache: dict = {}
 _price_cache_ts: dict = {}
 PRICE_CACHE_TTL = 30  # seconds
 
+# Initialize CCXT exchanges
 blofin = ccxt.blofin()
-bitunix = ccxt.bitunix()
+mexc = ccxt.mexc()
+
+def _from_bitunix(ticker: str) -> float | None:
+    """Manual HTTP fetcher for Bitunix since it isn't in CCXT yet."""
+    try:
+        # Query the public Bitunix futures ticker endpoint
+        url = "https://fapi.bitunix.com/api/v1/futures/market/tickers"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            
+            # Find the specific ticker in the returned array
+            for item in data.get("data", []):
+                if item.get("symbol") == ticker:
+                    return float(item.get("close", 0))
+    except Exception:
+        pass
+    return None
 
 def fetch_live_price(ticker: str) -> float | None:
     """
     Fetch the current market price for a USDT-margined pair.
-    Primary: Blofin — Fallback: Bitunix.
-    Results are cached for PRICE_CACHE_TTL seconds.
     """
     now = time.time()
     if ticker in _price_cache and now - _price_cache_ts.get(ticker, 0) < PRICE_CACHE_TTL:
@@ -88,36 +103,44 @@ def fetch_live_price(ticker: str) -> float | None:
     if ticker.endswith("USDT") and "/" not in ticker:
         ccxt_symbol = f"{ticker[:-4]}/USDT"
 
+    # 1. Attempt Primary: Blofin
     try:
-        # Attempt primary fetch via Blofin
         ticker_data = blofin.fetch_ticker(ccxt_symbol)
         price = ticker_data['last']
         if price and price > 0:
-            _price_cache[ticker]    = price
+            _price_cache[ticker] = price
             _price_cache_ts[ticker] = now
             print(f"💱 {ticker} price {price} fetched via Blofin")
             return price
     except Exception as e:
-        print(f"⚠️  Blofin fetch failed for {ticker}: {e}. Failing over to Bitunix...")
+        print(f"⚠️  Blofin fetch failed for {ticker} — trying Bitunix...")
 
+    # 2. Attempt Fallback: Bitunix
+    price = _from_bitunix(ticker)
+    if price and price > 0:
+        _price_cache[ticker] = price
+        _price_cache_ts[ticker] = now
+        print(f"💱 {ticker} price {price} fetched via Bitunix")
+        return price
+    else:
+        print(f"⚠️  Bitunix fetch failed for {ticker} — trying MEXC failsafe...")
+
+    # 3. Attempt Ultimate Failsafe: MEXC
     try:
-        # Fallback to Bitunix
-        ticker_data = bitunix.fetch_ticker(ccxt_symbol)
+        ticker_data = mexc.fetch_ticker(ccxt_symbol)
         price = ticker_data['last']
         if price and price > 0:
-            _price_cache[ticker]    = price
+            _price_cache[ticker] = price
             _price_cache_ts[ticker] = now
-            print(f"💱 {ticker} price {price} fetched via Bitunix")
+            print(f"💱 {ticker} price {price} fetched via MEXC")
             return price
     except Exception as e:
-        print(f"❌ All price sources (Blofin & Bitunix) failed for {ticker}: {e}")
+        print(f"❌ All price sources failed for {ticker}")
 
     return None
 
 # Keep old name as alias so nothing else breaks inside the Opinion Parser
 fetch_binance_price = fetch_live_price
-
-
 # ─────────────────────────────────────────
 # COIN / TICKER DETECTION
 # ─────────────────────────────────────────
