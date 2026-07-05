@@ -418,7 +418,7 @@ is_live_db = df_db is not None
 df_active_raw, df_hist_raw = generate_synthetic_data()
 
 if is_live_db:
-    # Blend database logs into active signals
+    # Use ONLY database logs when live database connection is active
     db_signals = df_db.copy()
     # Simple rule: if signal is less than 24 hours old, it's active. Otherwise historical
     limit_time = datetime.datetime.now() - datetime.timedelta(hours=24)
@@ -439,14 +439,16 @@ if is_live_db:
             lambda r: round(np.random.uniform(4, 12) if r['result'] == "Hit TP" else (np.random.uniform(-3, -5) if r['result'] == "Hit SL" else np.random.uniform(-1, 2)), 2),
             axis=1
         )
-        df_hist = pd.concat([db_hist, df_hist_raw]).sort_values("created_at", ascending=False)
+        df_hist = db_hist.sort_values("created_at", ascending=False)
     else:
-        df_hist = df_hist_raw
+        # Create empty DataFrame with same columns if no historical records exist
+        df_hist = pd.DataFrame(columns=db_signals.columns)
         
     if not db_active.empty:
-        df_active = pd.concat([db_active, df_active_raw]).sort_values("created_at", ascending=False)
+        df_active = db_active.sort_values("created_at", ascending=False)
     else:
-        df_active = df_active_raw
+        # Create empty DataFrame with same columns if no active records exist
+        df_active = pd.DataFrame(columns=db_signals.columns)
 else:
     df_active = df_active_raw
     df_hist = df_hist_raw
@@ -531,7 +533,7 @@ with tab_overview:
     col_stat1, col_stat2, col_stat3 = st.columns(3)
     
     active_cnt = len(df_active)
-    win_rate = round((len(df_hist[df_hist["result"] == "Hit TP"]) / len(df_hist)) * 100, 1)
+    win_rate = round((len(df_hist[df_hist["result"] == "Hit TP"]) / len(df_hist)) * 100, 1) if len(df_hist) > 0 else 0.0
     
     # Calculate Confluences: coins signaled by more than one room at the same time
     active_confluences = df_active.groupby(["ticker", "trade_type"]).filter(lambda x: len(x) > 1)
@@ -621,7 +623,7 @@ with tab_overview:
         active_sentiment = round((long_active / len(df_active)) * 100) if len(df_active) > 0 else 50
         
         # Calculate Scalping Masters win rate (as local example helper)
-        avg_pnl = round(df_hist["pnl"].mean(), 2)
+        avg_pnl = round(df_hist["pnl"].mean(), 2) if not df_hist.empty else 0.0
         pnl_color = "#10B981" if avg_pnl >= 0 else "#EF4444"
         
         # Layout circular gauges
