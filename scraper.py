@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.request
 import json
+import ccxt
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import psycopg2
@@ -62,78 +63,58 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MULTI-SOURCE LIVE PRICE FETCHER
-# Fallback chain: Binance → Bybit → OKX
-# Binance is geo-blocked (HTTP 451) on Render US servers.
-# Bybit and OKX have no regional restrictions on their public ticker APIs.
+# Primary: Blofin — Fallback: Bitunix
+# Uses ccxt for resilient exchange connections without geo-locking issues.
 # ─────────────────────────────────────────────────────────────────────────────
 _price_cache: dict = {}
 _price_cache_ts: dict = {}
 PRICE_CACHE_TTL = 30  # seconds
 
-def _http_get(url: str, timeout: int = 5) -> dict | None:
-    """Shared HTTP GET with a browser User-Agent header."""
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
-        return None
-
-
-def _from_bybit(ticker: str) -> float | None:
-    # Bybit linear perpetuals use the same symbol format (BTCUSDT, ETHUSDT, etc.)
-    data = _http_get(
-        f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={ticker}"
-    )
-    try:
-        return float(data["result"]["list"][0]["lastPrice"])
-    except Exception:
-        return None
-
-def _from_okx(ticker: str) -> float | None:
-    # OKX uses BTC-USDT format (hyphen-separated)
-    if not ticker.endswith("USDT"):
-        return None
-    base   = ticker[:-4]           # e.g. "BTC"
-    inst   = f"{base}-USDT"        # e.g. "BTC-USDT"
-    data   = _http_get(f"https://www.okx.com/api/v5/market/ticker?instId={inst}")
-    try:
-        return float(data["data"][0]["last"])
-    except Exception:
-        return None
+blofin = ccxt.blofin()
+bitunix = ccxt.bitunix()
 
 def fetch_live_price(ticker: str) -> float | None:
     """
     Fetch the current market price for a USDT-margined pair.
-    Primary: Bybit — Fallback: OKX.
+    Primary: Blofin — Fallback: Bitunix.
     Results are cached for PRICE_CACHE_TTL seconds.
     """
     now = time.time()
     if ticker in _price_cache and now - _price_cache_ts.get(ticker, 0) < PRICE_CACHE_TTL:
         return _price_cache[ticker]
 
-    sources = [
-        ("Bybit", _from_bybit),
-        ("OKX",   _from_okx),
-    ]
+    # CCXT requires standard format with slashes (e.g., BTC/USDT)
+    ccxt_symbol = ticker
+    if ticker.endswith("USDT") and "/" not in ticker:
+        ccxt_symbol = f"{ticker[:-4]}/USDT"
 
-    for name, fn in sources:
-        price = fn(ticker)
+    try:
+        # Attempt primary fetch via Blofin
+        ticker_data = blofin.fetch_ticker(ccxt_symbol)
+        price = ticker_data['last']
         if price and price > 0:
             _price_cache[ticker]    = price
             _price_cache_ts[ticker] = now
-            print(f"💱 {ticker} price {price} fetched via {name}")
+            print(f"💱 {ticker} price {price} fetched via Blofin")
             return price
-        else:
-            print(f"⚠️  {name} price fetch failed for {ticker} — trying next source")
+    except Exception as e:
+        print(f"⚠️  Blofin fetch failed for {ticker}: {e}. Failing over to Bitunix...")
 
-    print(f"❌ All price sources failed for {ticker}")
+    try:
+        # Fallback to Bitunix
+        ticker_data = bitunix.fetch_ticker(ccxt_symbol)
+        price = ticker_data['last']
+        if price and price > 0:
+            _price_cache[ticker]    = price
+            _price_cache_ts[ticker] = now
+            print(f"💱 {ticker} price {price} fetched via Bitunix")
+            return price
+    except Exception as e:
+        print(f"❌ All price sources (Blofin & Bitunix) failed for {ticker}: {e}")
+
     return None
 
-# Keep old name as alias so nothing else breaks
+# Keep old name as alias so nothing else breaks inside the Opinion Parser
 fetch_binance_price = fetch_live_price
 
 
@@ -276,7 +257,7 @@ def parse_opinion_text(text: str) -> dict | None:
     """
     Fallback opinion parser.
     Digests unstructured trader commentary into actionable signals
-    by combining sentiment analysis with a live Binance price anchor.
+    by combining sentiment analysis with a live Blofin/Bitunix price anchor.
     Tags result with source_type = 'OPINION'.
     """
     try:
@@ -288,7 +269,7 @@ def parse_opinion_text(text: str) -> dict | None:
         if not trade_type:
             return None
 
-        live_price = fetch_binance_price(ticker)
+        live_price = fetch_live_price(ticker)
         if not live_price:
             return None
 

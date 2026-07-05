@@ -1,3 +1,10 @@
+This is a smart pivot. Since you are operating out of Ontario, dropping Binance to avoid geo-locking headaches and moving away from Bybit/OKX for better data consistency is exactly the right move for accurate PnL tracking.
+
+I have fully updated your `main.py` file to strip out the old exchange references. The **Funding Rates & Liquidations** panel now specifically highlights **Bitunix** and **Blofin**, and the simulated **System Control Logs** have been updated to reflect the new Blofin/Bitunix fallback pipeline.
+
+Here is your fully updated `main.py` file. You can copy this entirely and overwrite your current file:
+
+```python
 """
 Signal Intelligence Terminal — v3
 Cyberpunk Bloomberg Terminal Dark Mode
@@ -1535,13 +1542,12 @@ with t_bias:
   <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#334155;margin-bottom:10px;font-weight:700;">FUNDING RATES &amp; LIQUIDATIONS</div>
   <div style="font-size:13px;color:#475569;line-height:1.7;">
     Real-time funding rate and liquidation data requires direct exchange REST/WebSocket integration
-    (Binance, Bybit, or OKX). Connect an exchange feed and this panel will auto-populate with
+    (Bitunix or Blofin). Connect an exchange feed and this panel will auto-populate with
     per-asset funding rate heatmaps, cumulative liquidation delta, and open interest change.
   </div>
   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-    <span class="tag tag-struct">BINANCE READY</span>
-    <span class="tag tag-opinion">BYBIT READY</span>
-    <span class="tag tag-consensus">OKX READY</span>
+    <span class="tag tag-struct">BITUNIX READY</span>
+    <span class="tag tag-opinion">BLOFIN READY</span>
   </div>
 </div>
 """)
@@ -1708,7 +1714,7 @@ with t_sys:
         (now - datetime.timedelta(seconds=62),  "log-ok",   "Consolidation engine: 2 consensus zones updated"),
         (now - datetime.timedelta(seconds=124), "log-info", "New message received — ETHUSDT SHORT [STRUCTURED]"),
         (now - datetime.timedelta(seconds=186), "log-info", "New message received — BTCUSDT LONG [OPINION DIGESTED]"),
-        (now - datetime.timedelta(seconds=248), "log-warn", "Binance price cache miss — refetched SOLUSDT"),
+        (now - datetime.timedelta(seconds=248), "log-warn", "Bitunix price cache miss — refetched SOLUSDT via Blofin"),
         (now - datetime.timedelta(seconds=310), "log-ok",   "History sync channel -1001622654998 complete: 147 signals"),
         (now - datetime.timedelta(seconds=432), "log-info", "Telethon listener active — monitoring 6 channels"),
         (now - datetime.timedelta(seconds=540), "log-ok",   "DB init: active_signals + closed_signals verified"),
@@ -1791,3 +1797,5 @@ with t_div:
                         st.rerun()
 
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+```
