@@ -60,30 +60,87 @@ threading.Thread(target=run_http_server, daemon=True).start()
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 
-# ─────────────────────────────────────────
-# BINANCE PUBLIC PRICE FETCHER (no API key)
-# ─────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# MULTI-SOURCE LIVE PRICE FETCHER
+# Fallback chain: Binance → Bybit → OKX
+# Binance is geo-blocked (HTTP 451) on Render US servers.
+# Bybit and OKX have no regional restrictions on their public ticker APIs.
+# ─────────────────────────────────────────────────────────────────────────────
 _price_cache: dict = {}
 _price_cache_ts: dict = {}
 PRICE_CACHE_TTL = 30  # seconds
 
-def fetch_binance_price(ticker: str) -> float | None:
-    """Fetch live price from Binance public REST API with 30-second caching."""
+def _http_get(url: str, timeout: int = 5) -> dict | None:
+    """Shared HTTP GET with a browser User-Agent header."""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+def _from_binance(ticker: str) -> float | None:
+    data = _http_get(f"https://api.binance.com/api/v3/ticker/price?symbol={ticker}")
+    if data and "price" in data:
+        return float(data["price"])
+    return None
+
+def _from_bybit(ticker: str) -> float | None:
+    # Bybit linear perpetuals use the same symbol format (BTCUSDT, ETHUSDT, etc.)
+    data = _http_get(
+        f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={ticker}"
+    )
+    try:
+        return float(data["result"]["list"][0]["lastPrice"])
+    except Exception:
+        return None
+
+def _from_okx(ticker: str) -> float | None:
+    # OKX uses BTC-USDT format (hyphen-separated)
+    if not ticker.endswith("USDT"):
+        return None
+    base   = ticker[:-4]           # e.g. "BTC"
+    inst   = f"{base}-USDT"        # e.g. "BTC-USDT"
+    data   = _http_get(f"https://www.okx.com/api/v5/market/ticker?instId={inst}")
+    try:
+        return float(data["data"][0]["last"])
+    except Exception:
+        return None
+
+def fetch_live_price(ticker: str) -> float | None:
+    """
+    Fetch the current market price for a USDT-margined pair.
+    Tries Binance first, falls back to Bybit, then OKX.
+    Results are cached for PRICE_CACHE_TTL seconds.
+    """
     now = time.time()
     if ticker in _price_cache and now - _price_cache_ts.get(ticker, 0) < PRICE_CACHE_TTL:
         return _price_cache[ticker]
-    try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={ticker}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-            price = float(data["price"])
-            _price_cache[ticker] = price
+
+    sources = [
+        ("Binance", _from_binance),
+        ("Bybit",   _from_bybit),
+        ("OKX",     _from_okx),
+    ]
+
+    for name, fn in sources:
+        price = fn(ticker)
+        if price and price > 0:
+            _price_cache[ticker]    = price
             _price_cache_ts[ticker] = now
+            print(f"💱 {ticker} price {price} fetched via {name}")
             return price
-    except Exception as e:
-        print(f"⚠️  Binance price fetch failed for {ticker}: {e}")
-        return None
+        else:
+            print(f"⚠️  {name} price fetch failed for {ticker} — trying next source")
+
+    print(f"❌ All price sources failed for {ticker}")
+    return None
+
+# Keep old name as alias so nothing else breaks
+fetch_binance_price = fetch_live_price
 
 
 # ─────────────────────────────────────────
