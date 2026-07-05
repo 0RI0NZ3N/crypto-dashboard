@@ -1,4 +1,3 @@
-```python
 """
 Signal Intelligence Terminal — v3
 Cyberpunk Bloomberg Terminal Dark Mode
