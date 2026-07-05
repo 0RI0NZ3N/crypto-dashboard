@@ -377,6 +377,13 @@ def init_db():
             );
         """)
 
+        # ── indexes — dashboard queries filter/sort by these on every load ──
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_active_signals_created_at ON active_signals (created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_active_signals_ticker_type ON active_signals (ticker, trade_type);
+            CREATE INDEX IF NOT EXISTS idx_closed_signals_closed_at ON closed_signals (closed_at DESC);
+        """)
+
         conn.commit()
         cur.close()
         conn.close()

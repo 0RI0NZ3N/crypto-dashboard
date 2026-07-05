@@ -10,7 +10,10 @@ import numpy as np
 import os
 import datetime
 import re
+import json
+import warnings
 from dotenv import load_dotenv
+from streamlit_autorefresh import st_autorefresh
 
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -21,6 +24,11 @@ st.set_page_config(
 )
 
 load_dotenv()
+
+# pandas emits a UserWarning when fed a raw psycopg2 (non-SQLAlchemy) connection.
+# The direct-connection path is intentional here (avoids adding SQLAlchemy as a
+# dependency for a single query), so silence the noise rather than the warning.
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
 # ── RENDER HELPER ─────────────────────────────────────────────────────────────
 # Critical: pass directly to st.markdown with unsafe_allow_html=True.
@@ -64,6 +72,7 @@ html, body, .stApp {
 
 /* ── FORM ELEMENTS ──────────────────────────────────────────────────────── */
 .stTextInput > div > div > input,
+.stNumberInput > div > div > input,
 div[data-baseweb="select"] > div {
     background: #131B2E !important;
     border: 1px solid #2D3F55 !important;
@@ -71,7 +80,27 @@ div[data-baseweb="select"] > div {
     font-family: 'Space Grotesk', sans-serif !important;
     border-radius: 8px !important;
 }
-.stSelectbox label, .stTextInput label { color: #94A3B8 !important; font-size: 12px !important; }
+.stSelectbox label, .stTextInput label, .stNumberInput label { color: #94A3B8 !important; font-size: 12px !important; }
+
+/* ── GENERIC BUTTONS / CHECKBOXES / DOWNLOAD ────────────────────────────── */
+div[data-testid="stButton"] > button,
+div[data-testid="stDownloadButton"] > button {
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    background: #131B2E !important;
+    border: 1px solid #2D3F55 !important;
+    color: #CBD5E1 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+div[data-testid="stButton"] > button:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+    border-color: #38BDF8 !important;
+    color: #38BDF8 !important;
+}
+.stCheckbox label p { color: #94A3B8 !important; font-size: 12px !important; }
+[data-testid="stWidgetLabel"] p { color: #94A3B8 !important; }
 
 /* ── DATAFRAME ──────────────────────────────────────────────────────────── */
 .stDataFrame { border: 1px solid #2D3F55 !important; border-radius: 10px !important; overflow: hidden; }
@@ -163,7 +192,13 @@ div[data-testid="stTabs"] {
 div[data-testid="stTabs"] [role="tablist"] {
     gap: 0 !important;
     background: transparent !important;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
 }
+div[data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar { display: none; height: 0; }
 div[data-testid="stTabs"] button[role="tab"] {
     font-family: 'Space Grotesk', sans-serif !important;
     font-size: 12px !important;
@@ -583,9 +618,22 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
     .signal-grid { grid-template-columns: 1fr !important; }
     .kpi-row { grid-template-columns: repeat(2, 1fr) !important; }
     .m-strip { display: flex !important; }
-    .t-nav { padding: 0 0.75rem; }
+    .t-nav { padding: 0 0.75rem; margin: 0 -0.75rem 1.5rem; }
+    .t-nav-brand { font-size: 12px; }
     .card-ticker { font-size: 18px; }
     .kpi-value { font-size: 22px; }
+    div[data-testid="stTabs"] button[role="tab"] { padding: 10px 14px !important; font-size: 11px !important; }
+}
+/* Streamlit's native st.columns() don't reflow on their own — without this,
+   filter rows / gauges / podium / nav controls squeeze into unreadably thin
+   slivers on phone-width screens, so wrap them into a 2-up grid instead. */
+@media (max-width: 640px) {
+    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; row-gap: 10px; }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: 46% !important;
+        flex: 1 1 46% !important;
+        width: auto !important;
+    }
 }
 </style>""")
 
@@ -636,11 +684,17 @@ def load_db() -> tuple:
                 pnl_pct DOUBLE PRECISION,
                 closed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE INDEX IF NOT EXISTS idx_active_signals_created_at ON active_signals (created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_active_signals_ticker_type ON active_signals (ticker, trade_type);
+            CREATE INDEX IF NOT EXISTS idx_closed_signals_closed_at ON closed_signals (closed_at DESC);
         """)
         conn.commit(); cur.close()
-        df_a  = pd.read_sql("SELECT * FROM active_signals ORDER BY created_at DESC", conn)
+        # Table grows forever (history sync goes back to Jan 2026 and never trims), so
+        # cap what we pull per refresh — newest rows first, index above makes this cheap.
+        ROW_CAP = 20_000
+        df_a  = pd.read_sql(f"SELECT * FROM active_signals ORDER BY created_at DESC LIMIT {ROW_CAP}", conn)
         try:
-            df_cl = pd.read_sql("SELECT * FROM closed_signals ORDER BY closed_at DESC", conn)
+            df_cl = pd.read_sql(f"SELECT * FROM closed_signals ORDER BY closed_at DESC LIMIT {ROW_CAP}", conn)
         except Exception:
             df_cl = pd.DataFrame()
         conn.close()
@@ -947,11 +1001,14 @@ def detect_conflicts(df_active) -> dict:
     return out
 
 
-def _estimate_rr(entry_mid, stop, trade_type) -> str:
-    risk = abs(entry_mid - stop)
-    if risk == 0:
+def _risk_pct(entry_mid, stop) -> str:
+    """Entry-to-stop distance as a % of entry. No take-profit field exists in the
+    schema, so a real reward:risk ratio can't be computed — this is an honest
+    proxy that's still useful for comparing downside exposure between two sides."""
+    if entry_mid == 0:
         return "—"
-    return f"1:{2 * risk / risk:.1f}"
+    pct = abs(entry_mid - stop) / entry_mid * 100
+    return f"{pct:.1f}%"
 
 
 def _recency_label(ts) -> str:
@@ -985,7 +1042,7 @@ def _conflict_side_html(trade_type, side_df, hist_df) -> str:
   <div class="conflict-stat"><span style="color:#64748B;">Entry Zone</span><br>
     <b>{side_df['entry_min'].mean():.4f} – {side_df['entry_max'].mean():.4f}</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Stop Loss</span><br><b style="color:#EF4444;">{stop:.4f}</b></div>
-  <div class="conflict-stat"><span style="color:#64748B;">Est. R:R</span><br><b>{_estimate_rr(entry_mid, stop, trade_type)}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Risk % (Entry→SL)</span><br><b>{_risk_pct(entry_mid, stop)}</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Avg Channel Win Rate</span><br><b>{avg_wr}%</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Latest Signal</span><br><b>{_recency_label(latest)}</b></div>
   <div class="conflict-stat" style="margin-top:10px;">
@@ -1017,6 +1074,24 @@ md(f"""
     <div>{nav_status}</div>
 </div>
 """)
+
+if "auto_refresh" not in st.session_state:
+    st.session_state.auto_refresh = True
+
+refresh_time = datetime.datetime.now().strftime("%H:%M:%S")
+rc_gap, rc_ts, rc_toggle, rc_btn = st.columns([6, 3, 2, 2])
+with rc_ts:
+    md(f'<div style="font-size:11px;color:#475569;padding-top:9px;text-align:right;">'
+       f'Updated&nbsp;<b style="color:#64748B;">{refresh_time}</b></div>')
+with rc_toggle:
+    st.checkbox("Live refresh", key="auto_refresh")
+with rc_btn:
+    if st.button("Refresh now", use_container_width=True):
+        load_db.clear()
+        st.rerun()
+
+if st.session_state.auto_refresh:
+    st_autorefresh(interval=30_000, key="live_autorefresh")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1413,12 +1488,45 @@ with t_exp:
     if f_src != "All Sources" and "source_type" in df_f.columns:
         df_f = df_f[df_f["source_type"] == f_src]
 
-    st.caption(f"{len(df_f):,} records match current filters")
-
     if df_f.empty:
+        st.caption("0 records match current filters")
         st.info("No records match the current filter combination.")
     else:
-        for _, row in df_f.head(80).iterrows():
+        dl_col, cap_col = st.columns([2, 6])
+        with dl_col:
+            st.download_button(
+                "⬇ Export filtered CSV",
+                data=df_f.to_csv(index=False).encode("utf-8"),
+                file_name=f"signal_archive_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with cap_col:
+            md(f'<div style="font-size:12px;color:#64748B;padding-top:10px;">{len(df_f):,} records match current filters</div>')
+
+        PAGE_SIZE = 25
+        total_pages = max((len(df_f) - 1) // PAGE_SIZE + 1, 1)
+        if "explorer_page" not in st.session_state:
+            st.session_state.explorer_page = 1
+        st.session_state.explorer_page = min(max(st.session_state.explorer_page, 1), total_pages)
+
+        pg1, pg2, pg3 = st.columns([2, 2, 6])
+        with pg1:
+            if st.button("← Prev page", disabled=st.session_state.explorer_page <= 1, use_container_width=True):
+                st.session_state.explorer_page -= 1
+                st.rerun()
+        with pg2:
+            if st.button("Next page →", disabled=st.session_state.explorer_page >= total_pages, use_container_width=True):
+                st.session_state.explorer_page += 1
+                st.rerun()
+        with pg3:
+            md(f'<div style="font-size:12px;color:#64748B;padding-top:10px;">'
+               f'Page {st.session_state.explorer_page} of {total_pages}</div>')
+
+        start = (st.session_state.explorer_page - 1) * PAGE_SIZE
+        page_df = df_f.iloc[start:start + PAGE_SIZE]
+
+        for _, row in page_df.iterrows():
             ri   = "+" if row.get("result") == "Hit TP" else ("-" if row.get("result") == "Hit SL" else "~")
             lev  = f" {int(row['leverage'])}x" if pd.notna(row.get("leverage")) else ""
             src  = f" [{row.get('source_type','?')}]" if "source_type" in row else ""
@@ -1546,6 +1654,70 @@ with t_bias:
 """)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GEMINI-POWERED SIGNAL SYNTHESIS
+# The model only narrates the structured data we hand it — the confidence score
+# shown to the user is always our own deterministic compute_confidence() value,
+# never something the LLM invents, so the two can't contradict each other.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_resource(show_spinner=False)
+def _gemini_client():
+    key = _secret("GEMINI_API_KEY")
+    if not key:
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=key)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _gemini_signal_synthesis(ticker, direction, n_rooms, room_names, entry_min, entry_max,
+                              stop_loss, source_mix, avg_win_rate, confidence, recency_label):
+    client = _gemini_client()
+    if client is None:
+        return None
+    from google.genai import types
+    prompt = f"""You are a terse crypto trading-signal analyst. Analyze ONLY the structured
+data below — never invent prices, news, or facts not given here. Do not give a buy/sell
+recommendation; describe the situation and the key risk factor only.
+
+Ticker: {ticker}
+Direction across reporting channels: {direction}
+Channels reporting: {n_rooms} ({room_names})
+Entry zone: {entry_min:.4f} - {entry_max:.4f}
+Stop loss: {stop_loss:.4f}
+Signal source mix: {source_mix}
+Average historical win rate of these channels: {avg_win_rate}%
+Deterministic confidence score (already computed from channel count, source type,
+recency and win rate — do not recompute or restate this number, just use it as context): {confidence}%
+Most recent signal: {recency_label}
+
+Return strict JSON with exactly two keys:
+"summary": a 1-2 sentence synthesis of the confluence/divergence picture and what it implies.
+"rationale": one short sentence naming the key risk factor to watch.
+"""
+    try:
+        resp = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+                max_output_tokens=400,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        data = json.loads(resp.text)
+        summary = str(data.get("summary", "")).strip()
+        rationale = str(data.get("rationale", "")).strip()
+        return (summary, rationale) if summary else None
+    except Exception:
+        return None
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 6 — AI RESEARCH NOTEBOOK
 # ════════════════════════════════════════════════════════════════════════════
@@ -1555,42 +1727,54 @@ with t_ai:
         'color:#334155;font-weight:700;margin-bottom:4px;">AI RESEARCH NOTEBOOK</div>',
         unsafe_allow_html=True,
     )
-    st.caption("Autonomous LLM analysis of active signal pairs. Plug in a Gemini or OpenAI API key to enable live inference.")
+    gemini_live = _gemini_client() is not None
+    if gemini_live:
+        st.caption("Live Gemini synthesis of active signal confluence — refreshed every 10 minutes per ticker. Not financial advice.")
+    else:
+        st.caption("Autonomous LLM analysis of active signal pairs. Add GEMINI_API_KEY to enable live inference.")
 
-    # Static research cards generated from active signal data
     if not df_active.empty:
         active_tickers = _non_cons["ticker"].value_counts().head(5).index.tolist()
-
-        # Placeholder analysis content keyed to real tickers
-        ANALYSIS = {
-            "BTCUSDT": ("Strong multi-channel confluence detected across 3 rooms. Price is approaching "
-                        "a key weekly resistance cluster. High-leverage signals suggest institutional positioning. "
-                        "Recommend sizing conservatively given macro uncertainty.",
-                        "LONG conviction elevated by BTC dominance expansion. Watch for rejection at $66k.",
-                        87),
-            "ETHUSDT": ("ETH showing diverging signals — 1 room long, 1 short. Network fee pressure easing. "
-                        "Spot ETF inflow narrative weakening short-term. Mixed picture.",
-                        "Neutral-to-bearish near-term. Await decisive break of $3,500 resistance.",
-                        54),
-            "SOLUSDT": ("Single channel long signal. SOL outperforming ETH in DeFi TVL metrics. "
-                        "Breakout pattern forming on the 4H chart per channel commentary.",
-                        "Moderate bullish bias. Risk/reward favorable if entry holds $140.",
-                        71),
-        }
+        wr_map_ai = _channel_win_rates(df_hist)
 
         for ticker in active_tickers:
-            grp_data = _non_cons[_non_cons["ticker"] == ticker]
-            n_rooms  = grp_data["group_name"].nunique()
+            grp_data  = _non_cons[_non_cons["ticker"] == ticker]
+            n_rooms   = grp_data["group_name"].nunique()
+            room_names = ", ".join(grp_data["group_name"].unique())
             direction = grp_data["trade_type"].mode()[0] if not grp_data.empty else "LONG"
-            conf = ANALYSIS.get(ticker, (
-                f"Signal activity detected from {n_rooms} channel(s). NLP confidence analysis "
-                f"pending LLM integration. Based on keyword weighting: {direction} bias detected.",
-                "Connect Gemini or OpenAI API key to enable deep chart rationale generation.",
-                round(50 + n_rooms * 8),
-            ))
+            entry_min = float(grp_data["entry_min"].mean())
+            entry_max = float(grp_data["entry_max"].mean())
+            stop_loss = float(grp_data["stop_loss"].mean())
+            confidence = compute_confidence(grp_data, df_hist)
+            latest = pd.to_datetime(grp_data["created_at"]).max()
+            recency = _recency_label(latest) if pd.notna(latest) else "unknown"
 
-            conf_pct = min(conf[2], 99)
-            conf_color = "#10B981" if conf_pct >= 70 else ("#F59E0B" if conf_pct >= 50 else "#EF4444")
+            src_counts = (grp_data["source_type"].value_counts()
+                          if "source_type" in grp_data.columns else pd.Series(dtype=int))
+            source_mix = ", ".join(f"{k}: {v}" for k, v in src_counts.items()) or "STRUCTURED: 1"
+
+            wrs = [wr_map_ai.get(c, 50.0) for c in grp_data["group_name"].unique()]
+            avg_wr = round(sum(wrs) / len(wrs), 1) if wrs else 50.0
+
+            result = None
+            if gemini_live:
+                result = _gemini_signal_synthesis(
+                    ticker, direction, n_rooms, room_names, entry_min, entry_max,
+                    stop_loss, source_mix, avg_wr, confidence, recency,
+                )
+
+            if result:
+                summary, rationale = result
+                tag_html = '<span class="ai-conf" style="background:rgba(16,185,129,0.1);color:#10B981;border-color:rgba(16,185,129,0.25);">GEMINI LIVE</span>'
+            else:
+                summary = (f"Signal activity detected from {n_rooms} channel(s) with a {direction.lower()} bias "
+                           f"and {avg_wr}% average historical win rate among reporting channels.")
+                rationale = ("Add GEMINI_API_KEY to your environment to enable live narrative synthesis."
+                              if not gemini_live else
+                              "Gemini call unavailable this cycle — showing data-only fallback.")
+                tag_html = '<span class="ai-conf">DATA-ONLY</span>'
+
+            conf_color = "#10B981" if confidence >= 70 else ("#F59E0B" if confidence >= 50 else "#EF4444")
             dir_cls_ai = "dir-long" if direction == "LONG" else "dir-short"
 
             md(f"""
@@ -1598,11 +1782,12 @@ with t_ai:
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     <span class="ai-ticker">{ticker}</span>
     <span class="dir-pill {dir_cls_ai}">{direction}</span>
-    <span class="ai-conf">AI CONFIDENCE: <b style="color:{conf_color};">{conf_pct}%</b></span>
+    <span class="ai-conf">CONFIDENCE: <b style="color:{conf_color};">{confidence}%</b></span>
+    {tag_html}
     <span style="margin-left:auto;font-size:10px;color:#334155;">{n_rooms} channel(s) active</span>
   </div>
-  <div class="ai-summary">{conf[0]}</div>
-  <div class="ai-rationale">RATIONALE: {conf[1]}</div>
+  <div class="ai-summary">{summary}</div>
+  <div class="ai-rationale">RISK FACTOR: {rationale}</div>
 </div>
 """)
     else:
@@ -1610,22 +1795,21 @@ with t_ai:
 <div class="glass-panel">
   <div style="font-size:13px;color:#475569;line-height:1.8;">
     No active signals to analyze. Once the Telegram scraper populates the database,
-    this notebook will auto-generate LLM-powered analysis cards for each active trading pair,
+    this notebook will auto-generate analysis cards for each active trading pair,
     including confidence scores, chart rationales, and risk commentary.
   </div>
 </div>
 """)
 
-    # Integration instructions
-    md("""
+    if not gemini_live:
+        md("""
 <div class="glass-panel" style="margin-top:8px;border-color:rgba(129,140,248,0.2);">
   <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#334155;margin-bottom:10px;font-weight:700;">ENABLE LIVE LLM INFERENCE</div>
   <div style="font-size:13px;color:#475569;line-height:1.8;">
     Add <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">GEMINI_API_KEY</code>
-    or <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">OPENAI_API_KEY</code>
     to your <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">.env</code>
-    / Streamlit Secrets to replace placeholder analysis with real-time chart reading and
-    structured JSON signal scoring via the scraper LLM pipeline.
+    / Streamlit Secrets to replace the data-only fallback with real-time synthesis
+    of each active signal group.
   </div>
 </div>
 """)
@@ -1673,6 +1857,14 @@ with t_sys:
 </div>
 """)
 
+    _configured_channels = _secret("TELEGRAM_CHANNELS")
+    if _configured_channels:
+        channels_monitored = len([c for c in str(_configured_channels).split(",") if c.strip()])
+    elif IS_LIVE and db_all is not None and not db_all.empty:
+        channels_monitored = db_all[db_all["group_name"] != "CONSENSUS"]["group_name"].nunique()
+    else:
+        channels_monitored = "—"
+
     with sys2:
         md(f"""
 <div class="glass-panel">
@@ -1687,7 +1879,7 @@ with t_sys:
   </div>
   <div class="sys-row">
     <span class="sys-key">Channels Monitored</span>
-    <span class="sys-val sys-ok">6 channels</span>
+    <span class="sys-val sys-ok">{channels_monitored}</span>
   </div>
   <div class="sys-row">
     <span class="sys-key">Consolidation Engine</span>
@@ -1700,37 +1892,35 @@ with t_sys:
 </div>
 """)
 
-    # Simulated log stream
-    now    = datetime.datetime.utcnow()
-    events_log = [
-        (now - datetime.timedelta(seconds=5),  "log-ok",   "DB query completed — 30s cache refreshed"),
-        (now - datetime.timedelta(seconds=62),  "log-ok",   "Consolidation engine: 2 consensus zones updated"),
-        (now - datetime.timedelta(seconds=124), "log-info", "New message received — ETHUSDT SHORT [STRUCTURED]"),
-        (now - datetime.timedelta(seconds=186), "log-info", "New message received — BTCUSDT LONG [OPINION DIGESTED]"),
-        (now - datetime.timedelta(seconds=248), "log-warn", "Bitunix price cache miss — refetched SOLUSDT via Blofin"),
-        (now - datetime.timedelta(seconds=310), "log-ok",   "History sync channel -1001622654998 complete: 147 signals"),
-        (now - datetime.timedelta(seconds=432), "log-info", "Telethon listener active — monitoring 6 channels"),
-        (now - datetime.timedelta(seconds=540), "log-ok",   "DB init: active_signals + closed_signals verified"),
-        (now - datetime.timedelta(seconds=602), "log-ok",   "StringSession authentication successful"),
-    ]
+    # Recent activity — built from real ingested signals, not simulated data
+    recent_src = pd.concat([df_active, df_hist], ignore_index=True) if not df_hist.empty else df_active.copy()
+    if not recent_src.empty:
+        recent_src = recent_src[recent_src["group_name"] != "CONSENSUS"]
+        recent_src = recent_src[recent_src["created_at"].notna()].sort_values("created_at", ascending=False).head(12)
 
     st.markdown(
         '<div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;'
-        'color:#334155;font-weight:700;margin:14px 0 8px;">EVENT LOG (SIMULATED — CONNECT RENDER LOGS FOR LIVE FEED)</div>',
+        'color:#334155;font-weight:700;margin:14px 0 8px;">RECENT SIGNAL ACTIVITY</div>',
         unsafe_allow_html=True,
     )
 
-    log_html = '<div style="background:#060910;border:1px solid #1E2A3A;border-radius:10px;padding:14px;">'
-    for ts, css_cls, msg in events_log:
-        ts_str    = ts.strftime("%H:%M:%S")
-        prefix    = "OK  " if "ok" in css_cls else ("WARN" if "warn" in css_cls else "INFO")
-        log_html += (f'<div class="sys-log-line">'
-                     f'<span class="log-ts">{ts_str}</span>'
-                     f'<span class="{css_cls}" style="min-width:40px;font-weight:700;">{prefix}</span>'
-                     f'<span style="color:#475569;">{msg}</span>'
-                     f'</div>')
-    log_html += "</div>"
-    md(log_html)
+    if recent_src.empty:
+        md('<div class="glass-panel" style="font-size:13px;color:#475569;">No signals ingested yet — this fills in as the scraper processes Telegram messages.</div>')
+    else:
+        log_html = '<div style="background:#060910;border:1px solid #1E2A3A;border-radius:10px;padding:14px;">'
+        for _, row in recent_src.iterrows():
+            ts_str = pd.to_datetime(row["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+            is_long = row["trade_type"] == "LONG"
+            dir_css = "log-ok" if is_long else "log-warn"
+            src     = row.get("source_type", "STRUCTURED")
+            msg     = f'{row["ticker"]} from {row["group_name"]} [{src}]'
+            log_html += (f'<div class="sys-log-line">'
+                         f'<span class="log-ts">{ts_str}</span>'
+                         f'<span class="{dir_css}" style="min-width:44px;font-weight:700;">{row["trade_type"]}</span>'
+                         f'<span style="color:#475569;">{msg}</span>'
+                         f'</div>')
+        log_html += "</div>"
+        md(log_html)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1790,5 +1980,3 @@ with t_div:
                         st.rerun()
 
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-```
