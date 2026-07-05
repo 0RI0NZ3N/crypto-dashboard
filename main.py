@@ -192,7 +192,9 @@ div[data-testid="stTabs"] button[role="tab"]:hover {
 /* ══════════════════════════════════════════════════════════════════════════
    KPI STAT CARDS
 ══════════════════════════════════════════════════════════════════════════ */
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 1.5rem; }
+.kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 1.5rem; }
+@media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 .kpi-card {
     background: #131B2E;
     border: 1px solid #2D3F55;
@@ -363,6 +365,97 @@ div[data-testid="stTabs"] button[role="tab"]:hover {
     font-size: 9px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
     color: #FBBF24; margin-bottom: 10px; padding-bottom: 10px;
     border-bottom: 1px solid rgba(251,191,36,0.22);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CONFIDENCE BADGE + CONFLICT RESOLVER
+══════════════════════════════════════════════════════════════════════════ */
+.conf-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.conf-green { background: rgba(16,185,129,0.15); color: #10B981; border: 1px solid rgba(16,185,129,0.4); box-shadow: 0 0 12px rgba(16,185,129,0.35); }
+.conf-amber { background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.4); box-shadow: 0 0 12px rgba(245,158,11,0.35); }
+.conf-red   { background: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid rgba(239,68,68,0.4); box-shadow: 0 0 12px rgba(239,68,68,0.35); }
+
+.conflict-card {
+    background: #131B2E;
+    border: 1px solid #2D3F55;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 18px;
+}
+.conflict-card.conflict-resolved { opacity: 0.45; filter: grayscale(0.25); }
+.conflict-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #F1F5F9;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.conflict-side {
+    background: #0F1523;
+    border: 1px solid #2D3F55;
+    border-radius: 12px;
+    padding: 16px 18px;
+    height: 100%;
+}
+.conflict-side-long  { border-color: rgba(16,185,129,0.35); }
+.conflict-side-short { border-color: rgba(239,68,68,0.35); }
+.conflict-side-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+.conflict-stat { font-size: 12px; color: #94A3B8; line-height: 1.9; }
+.conflict-stat b { color: #E2E8F0; font-family: 'JetBrains Mono', monospace; }
+.resolution-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #10B981;
+    margin-top: 10px;
+}
+
+.signal-card-col div[data-testid="stButton"] > button {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+    background: transparent !important;
+    border: 1px solid #2D3F55 !important;
+    color: #FFFFFF !important;
+    border-radius: 8px !important;
+    padding: 6px 12px !important;
+    margin-bottom: 6px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    width: 100% !important;
+}
+.signal-card-col div[data-testid="stButton"] > button:hover {
+    border-color: #38BDF8 !important;
+    color: #38BDF8 !important;
+    box-shadow: 0 0 14px rgba(56,189,248,0.25) !important;
+}
+
+div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"] {
+    font-weight: 700 !important;
+    letter-spacing: 0.8px !important;
+    text-transform: uppercase !important;
+    border-radius: 8px !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -702,7 +795,8 @@ def _conv_bars(n: int, kind: str) -> str:
 
 def signal_card(ticker, trade_type, rooms_count, room_names,
                 entry_min, entry_max, stop_loss, source_type,
-                is_consensus=False, diverge=False) -> str:
+                is_consensus=False, diverge=False, confidence=None,
+                hide_ticker=False) -> str:
 
     card_cls = ("card-consensus" if is_consensus else
                 "card-long" if trade_type == "LONG" else "card-short")
@@ -721,6 +815,16 @@ def signal_card(ticker, trade_type, rooms_count, room_names,
         src_tag   = '<span class="tag tag-struct">STRUCTURED</span>'
         banner    = ""
 
+    conf_html = ""
+    if confidence is not None:
+        conf_cls = ("green" if confidence >= 75 else
+                    "amber" if confidence >= 50 else "red")
+        conf_html = f'<span class="conf-badge conf-{conf_cls}">{confidence}%</span>'
+
+    ticker_html = ""
+    if not hide_ticker:
+        ticker_html = f'<span class="card-ticker">{ticker}</span>'
+
     div_html  = '<div class="diverge-pill">DIVERGING DIRECTIONS DETECTED</div>' if diverge else ""
     room_html = (f'<b>{rooms_count} channels</b> &mdash; ' if rooms_count > 1 else "") + room_names
 
@@ -729,11 +833,14 @@ def signal_card(ticker, trade_type, rooms_count, room_names,
         f'  {banner}'
         f'  <div class="card-header">'
         f'    <div>'
-        f'      <span class="card-ticker">{ticker}</span>'
+        f'      {ticker_html}'
         f'      <span class="dir-pill {dir_cls}" style="margin-left:10px;">{dir_lbl}</span>'
         f'      {bars}'
         f'    </div>'
-        f'    <div>{src_tag}</div>'
+        f'    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">'
+        f'      {conf_html}'
+        f'      {src_tag}'
+        f'    </div>'
         f'  </div>'
         f'  <div class="card-channels">{room_html}</div>'
         f'  {div_html}'
@@ -769,6 +876,133 @@ def _svg_gauge(pct: int, color: str, label: str) -> str:
     )
 
 
+def _channel_win_rates(hist_df) -> dict:
+    rates = {}
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return rates
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"]
+    for grp in src["group_name"].unique():
+        gd = src[src["group_name"] == grp]
+        tot = len(gd)
+        wins = len(gd[gd["result"] == "Hit TP"])
+        rates[grp] = round(wins / tot * 100, 1) if tot else 50.0
+    return rates
+
+
+def compute_confidence(grp_df, hist_df) -> int:
+    """Score a (ticker, direction) group 0–100 from agreement, source, recency, win rate."""
+    if grp_df is None or grp_df.empty:
+        return 0
+
+    score = 0.0
+
+    n_channels = grp_df["group_name"].nunique()
+    score += min(n_channels, 3) * 15
+
+    src = (grp_df["source_type"].mode()[0]
+           if "source_type" in grp_df.columns else "STRUCTURED")
+    if src == "STRUCTURED":
+        score += 15
+    elif src == "OPINION":
+        score += 5
+    elif src == "CONSENSUS":
+        score += 10
+    else:
+        score += 10
+
+    if "created_at" in grp_df.columns:
+        latest = pd.to_datetime(grp_df["created_at"]).max()
+        if pd.notna(latest):
+            now = pd.Timestamp.now(tz=latest.tz) if getattr(latest, "tz", None) else pd.Timestamp.now()
+            age_h = max((now - latest).total_seconds() / 3600, 0)
+            if age_h < 1:
+                score += 20
+            elif age_h < 4:
+                score += 12
+            elif age_h < 12:
+                score += 5
+
+    wr_map = _channel_win_rates(hist_df)
+    wrs = [wr_map.get(c, 50.0) for c in grp_df["group_name"].unique() if c != "CONSENSUS"]
+    if wrs:
+        score += sum(wrs) / len(wrs) / 100 * 20
+
+    return min(int(round(score)), 100)
+
+
+def detect_conflicts(df_active) -> dict:
+    """Return tickers with both LONG and SHORT signals in the last 24 h."""
+    if df_active is None or df_active.empty:
+        return {}
+    reg = df_active[df_active["group_name"] != "CONSENSUS"]
+    out = {}
+    for ticker in reg["ticker"].unique():
+        tdf = reg[reg["ticker"] == ticker]
+        types = set(tdf["trade_type"].unique())
+        if "LONG" in types and "SHORT" in types:
+            out[ticker] = {
+                "long":  tdf[tdf["trade_type"] == "LONG"].copy(),
+                "short": tdf[tdf["trade_type"] == "SHORT"].copy(),
+            }
+    return out
+
+
+def _estimate_rr(entry_mid, stop, trade_type) -> str:
+    risk = abs(entry_mid - stop)
+    if risk == 0:
+        return "—"
+    return f"1:{2 * risk / risk:.1f}"
+
+
+def _recency_label(ts) -> str:
+    ts = pd.to_datetime(ts)
+    now = pd.Timestamp.now(tz=ts.tz) if getattr(ts, "tz", None) else pd.Timestamp.now()
+    mins = max(int((now - ts).total_seconds() / 60), 0)
+    if mins < 60:
+        return f"{mins}m ago"
+    hrs = mins // 60
+    if hrs < 24:
+        return f"{hrs}h ago"
+    return f"{hrs // 24}d ago"
+
+
+def _conflict_side_html(trade_type, side_df, hist_df) -> str:
+    conf = compute_confidence(side_df, hist_df)
+    conf_cls = "green" if conf >= 75 else ("amber" if conf >= 50 else "red")
+    channels = ", ".join(side_df["group_name"].unique())
+    entry_mid = float((side_df["entry_min"].mean() + side_df["entry_max"].mean()) / 2)
+    stop = float(side_df["stop_loss"].mean())
+    wr_map = _channel_win_rates(hist_df)
+    wrs = [wr_map.get(c, 50.0) for c in side_df["group_name"].unique()]
+    avg_wr = round(sum(wrs) / len(wrs), 1) if wrs else 0
+    latest = pd.to_datetime(side_df["created_at"]).max()
+    side_cls = "conflict-side-long" if trade_type == "LONG" else "conflict-side-short"
+    color = "#10B981" if trade_type == "LONG" else "#EF4444"
+    return f"""
+<div class="conflict-side {side_cls}">
+  <div class="conflict-side-title" style="color:{color};">{trade_type} CASE</div>
+  <div class="conflict-stat"><span style="color:#64748B;">Channels</span><br><b>{channels}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Entry Zone</span><br>
+    <b>{side_df['entry_min'].mean():.4f} – {side_df['entry_max'].mean():.4f}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Stop Loss</span><br><b style="color:#EF4444;">{stop:.4f}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Est. R:R</span><br><b>{_estimate_rr(entry_mid, stop, trade_type)}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Avg Channel Win Rate</span><br><b>{avg_wr}%</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Latest Signal</span><br><b>{_recency_label(latest)}</b></div>
+  <div class="conflict-stat" style="margin-top:10px;">
+    <span class="conf-badge conf-{conf_cls}">{conf}% confidence</span>
+  </div>
+</div>"""
+
+
+conflicts    = detect_conflicts(df_active)
+conflict_cnt = len(conflicts)
+
+if "drill_ticker" not in st.session_state:
+    st.session_state.drill_ticker = None
+if "conflict_resolutions" not in st.session_state:
+    st.session_state.conflict_resolutions = {}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TOP NAV BAR
 # ══════════════════════════════════════════════════════════════════════════════
@@ -802,26 +1036,29 @@ md(f"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 7-TAB NAVIGATION
+# 8-TAB NAVIGATION
 # ══════════════════════════════════════════════════════════════════════════════
+_div_tab = f"DIVERGENCE ({conflict_cnt})" if conflict_cnt else "DIVERGENCE"
 tabs = st.tabs([
-    "LIVE TERMINAL",
+    "LIVE SIGNALS",
     "ANALYTICS",
     "CHANNEL INDEX",
     "SIGNAL EXPLORER",
     "MARKET BIAS",
     "AI RESEARCH",
     "SYSTEM LOGS",
+    _div_tab,
 ])
-t_term, t_anal, t_chan, t_exp, t_bias, t_ai, t_sys = tabs
+t_term, t_anal, t_chan, t_exp, t_bias, t_ai, t_sys, t_div = tabs
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 1 — LIVE TERMINAL
+# TAB 1 — LIVE SIGNALS
 # ════════════════════════════════════════════════════════════════════════════
 with t_term:
 
     # KPI row
+    _conf_col = "#EF4444" if conflict_cnt else "#64748B"
     md(f"""
 <div class="kpi-row">
   <div class="kpi-card kpi-accent-blue">
@@ -833,6 +1070,11 @@ with t_term:
     <div class="kpi-label">Confluences</div>
     <div class="kpi-value">{conf_cnt}</div>
     <div class="kpi-sub">Multi-channel agreements</div>
+  </div>
+  <div class="kpi-card" style="border-color:{'rgba(239,68,68,0.35)' if conflict_cnt else 'rgba(45,63,85,1)'};">
+    <div class="kpi-label">Divergences</div>
+    <div class="kpi-value" style="color:{_conf_col};">{conflict_cnt}</div>
+    <div class="kpi-sub">LONG + SHORT conflicts</div>
   </div>
   <div class="kpi-card kpi-accent-green">
     <div class="kpi-label">Win Rate</div>
@@ -853,46 +1095,111 @@ with t_term:
         st.markdown(
             '<div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;'
             'color:#334155;font-weight:700;margin-bottom:12px;">'
-            'CONSENSUS BOARD &mdash; ACTIVE SIGNAL GRID</div>',
+            'LIVE SIGNAL BOARD &mdash; CONFIDENCE-SCORED GRID</div>',
             unsafe_allow_html=True,
         )
 
         if df_active.empty:
             st.info("No active signals in the last 24 hours. The scraper is syncing historical data — check the System Logs tab.")
         else:
-            cards = ""
+            signal_groups = []
+            wr_map = _channel_win_rates(df_hist)
 
-            # 1. Consensus rows first
             cons_rows = df_active[df_active["group_name"] == "CONSENSUS"]
             for _, row in cons_rows.iterrows():
                 m = re.search(r"CONSENSUS x (\d+)", str(row["raw_message"]))
                 n = int(m.group(1)) if m else 2
                 m2 = re.search(r"Channels: (.+)", str(row["raw_message"]))
                 rooms = m2.group(1) if m2 else "Multiple Channels"
-                cards += signal_card(
-                    row["ticker"], row["trade_type"], n, rooms,
-                    row["entry_min"], row["entry_max"], row["stop_loss"],
-                    "CONSENSUS", is_consensus=True,
-                )
+                grp_df = pd.DataFrame([row])
+                signal_groups.append({
+                    "ticker": row["ticker"], "trade_type": row["trade_type"],
+                    "rooms_count": n, "room_names": rooms,
+                    "entry_min": float(row["entry_min"]),
+                    "entry_max": float(row["entry_max"]),
+                    "stop_loss": float(row["stop_loss"]),
+                    "source_type": "CONSENSUS", "is_consensus": True,
+                    "diverge": row["ticker"] in conflicts,
+                    "grp_df": grp_df,
+                    "confidence": compute_confidence(grp_df, df_hist),
+                })
 
-            # 2. Per-channel rows grouped
             reg = df_active[df_active["group_name"] != "CONSENSUS"]
             if not reg.empty:
                 for (ticker, ttype), grp in reg.groupby(["ticker", "trade_type"]):
-                    n     = grp["group_name"].nunique()
+                    n = grp["group_name"].nunique()
                     rooms = ", ".join(grp["group_name"].unique())
-                    div   = len(reg[reg["ticker"] == ticker]["trade_type"].unique()) > 1
-                    src   = (grp["source_type"].mode()[0]
-                             if "source_type" in grp.columns else "STRUCTURED")
-                    cards += signal_card(
-                        ticker, ttype, n, rooms,
-                        float(grp["entry_min"].mean()),
-                        float(grp["entry_max"].mean()),
-                        float(grp["stop_loss"].mean()),
-                        src, diverge=div,
-                    )
+                    src = (grp["source_type"].mode()[0]
+                           if "source_type" in grp.columns else "STRUCTURED")
+                    signal_groups.append({
+                        "ticker": ticker, "trade_type": ttype,
+                        "rooms_count": n, "room_names": rooms,
+                        "entry_min": float(grp["entry_min"].mean()),
+                        "entry_max": float(grp["entry_max"].mean()),
+                        "stop_loss": float(grp["stop_loss"].mean()),
+                        "source_type": src, "is_consensus": False,
+                        "diverge": ticker in conflicts,
+                        "grp_df": grp.copy(),
+                        "confidence": compute_confidence(grp, df_hist),
+                    })
 
-            md(f'<div class="signal-grid">{cards}</div>')
+            ncols = 3
+            for row_start in range(0, len(signal_groups), ncols):
+                row_groups = signal_groups[row_start:row_start + ncols]
+                cols = st.columns(ncols)
+                for col_idx, g in enumerate(row_groups):
+                    with cols[col_idx]:
+                        st.markdown('<div class="signal-card-col">', unsafe_allow_html=True)
+                        if st.button(
+                            g["ticker"],
+                            key=f"tbtn_{g['ticker']}_{g['trade_type']}_{row_start + col_idx}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.drill_ticker = g["ticker"]
+                        md(signal_card(
+                            g["ticker"], g["trade_type"], g["rooms_count"], g["room_names"],
+                            g["entry_min"], g["entry_max"], g["stop_loss"], g["source_type"],
+                            is_consensus=g["is_consensus"], diverge=g["diverge"],
+                            confidence=g["confidence"], hide_ticker=True,
+                        ))
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+            if st.session_state.drill_ticker:
+                drill = st.session_state.drill_ticker
+                tdf = df_active[df_active["ticker"] == drill]
+                if not tdf.empty:
+                    with st.expander(f"{drill} — Per-Channel Breakdown", expanded=True):
+                        n_long_ch  = tdf[tdf["trade_type"] == "LONG"]["group_name"].nunique()
+                        n_short_ch = tdf[tdf["trade_type"] == "SHORT"]["group_name"].nunique()
+                        lp = round(n_long_ch / max(n_long_ch + n_short_ch, 1) * 100, 1)
+                        md(f"""
+<div class="sent-wrap" style="margin-bottom:14px;">
+  <div style="font-size:12px;font-weight:700;color:#CBD5E1;">
+    {n_long_ch} channel{'s' if n_long_ch != 1 else ''} LONG / {n_short_ch} channel{'s' if n_short_ch != 1 else ''} SHORT for this asset
+  </div>
+  <div class="sent-track"><div class="sent-fill" style="width:{lp}%;"></div></div>
+</div>
+""")
+                        drill_rows = []
+                        for _, row in tdf.iterrows():
+                            ch = row["group_name"]
+                            raw = str(row.get("raw_message", ""))
+                            preview = raw[:80] + ("…" if len(raw) > 80 else "")
+                            wr_val = wr_map.get(ch)
+                            drill_rows.append({
+                                "Channel": ch,
+                                "Direction": row["trade_type"],
+                                "Entry": f"{row['entry_min']:.4f}–{row['entry_max']:.4f}",
+                                "Stop": f"{row['stop_loss']:.4f}",
+                                "Source": row.get("source_type", "STRUCTURED"),
+                                "Win Rate": f"{wr_val}%" if wr_val is not None else "—",
+                                "Raw Message": preview,
+                            })
+                        st.dataframe(
+                            pd.DataFrame(drill_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
 
     with side_col:
         st.markdown(
@@ -1425,3 +1732,62 @@ with t_sys:
                      f'</div>')
     log_html += "</div>"
     md(log_html)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAB 8 — DIVERGENCE ALERT
+# ════════════════════════════════════════════════════════════════════════════
+with t_div:
+    st.markdown(
+        '<div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;'
+        'color:#334155;font-weight:700;margin-bottom:4px;">DIVERGENCE ALERT — CONFLICT RESOLVER</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Assets with simultaneous LONG and SHORT signals in the last 24 hours. "
+        "Review both cases and pick a direction."
+    )
+
+    if not conflicts:
+        md("""
+<div class="glass-panel" style="text-align:center;padding:32px;">
+  <div style="font-size:14px;color:#10B981;font-weight:700;margin-bottom:8px;">No active divergences</div>
+  <div style="font-size:13px;color:#475569;">All monitored assets have a unified directional bias in the last 24 h.</div>
+</div>
+""")
+    else:
+        for ticker, sides in conflicts.items():
+            resolved = st.session_state.conflict_resolutions.get(ticker)
+            dim_cls = " conflict-resolved" if resolved else ""
+            badge = (
+                f'<span class="conf-badge conf-green">✓ {resolved}</span>'
+                if resolved else
+                '<span class="conf-badge conf-red">UNRESOLVED</span>'
+            )
+            md(f"""
+<div class="conflict-card{dim_cls}">
+  <div class="conflict-header">
+    <span>{ticker}</span>
+    {badge}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+    {_conflict_side_html("LONG", sides["long"], df_hist)}
+    {_conflict_side_html("SHORT", sides["short"], df_hist)}
+  </div>
+</div>
+""")
+
+            if resolved:
+                md(f'<div class="resolution-done">✓ Resolved — leaning <b>{resolved}</b></div>')
+            else:
+                rb1, rb2 = st.columns(2)
+                with rb1:
+                    if st.button("I'M BULLISH", key=f"bull_{ticker}", use_container_width=True):
+                        st.session_state.conflict_resolutions[ticker] = "LONG"
+                        st.rerun()
+                with rb2:
+                    if st.button("I'M BEARISH", key=f"bear_{ticker}", use_container_width=True):
+                        st.session_state.conflict_resolutions[ticker] = "SHORT"
+                        st.rerun()
+
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
