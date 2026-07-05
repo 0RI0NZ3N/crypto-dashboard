@@ -165,7 +165,54 @@ async def my_event_handler(event):
         except Exception as e:
             print(f"❌ Database log error: {e}")
 
-print("⚡ Telegram Listener Started. Monitoring channels for real signals...")
-init_db()
+async def scrape_history():
+    print("⏳ Scraping historical messages from monitored channels...")
+    if not DB_PARAMS["host"]:
+        print("⚠️ Database credentials not specified. Skipping history sync.")
+        return
+        
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cursor = conn.cursor()
+        for channel_id in CHANNELS:
+            try:
+                # Fetch last 30 messages from each channel
+                async for message in client.iter_messages(channel_id, limit=30):
+                    if not message.text:
+                        continue
+                    parsed = parse_signal_text(message.text)
+                    if parsed:
+                        # Check if message already exists to avoid duplicates
+                        cursor.execute("SELECT id FROM active_signals WHERE raw_message = %s", (message.text,))
+                        if cursor.fetchone():
+                            continue
+                        
+                        # Get channel info safely
+                        try:
+                            channel = await client.get_entity(channel_id)
+                            channel_title = getattr(channel, 'title', f"Group {channel_id}")
+                        except Exception:
+                            channel_title = f"Group {channel_id}"
+                        
+                        # Insert with the message's original timestamp
+                        cursor.execute("""
+                            INSERT INTO active_signals (group_name, ticker, trade_type, entry_min, entry_max, stop_loss, raw_message, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (channel_title, parsed['ticker'], parsed['trade_type'], parsed['entry_min'], parsed['entry_max'], parsed['stop_loss'], parsed['raw_message'], message.date))
+                conn.commit()
+                print(f"✅ History sync completed for channel {channel_id}")
+            except Exception as e:
+                print(f"⚠️ Error syncing history for channel {channel_id}: {e}")
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"❌ Database connection error during history sync: {e}")
+
+async def run_scraper():
+    init_db()
+    await scrape_history()
+    print("⚡ Telegram Listener Started. Monitoring channels for real signals...")
+
 client.start()
+client.loop.run_until_complete(run_scraper())
 client.run_until_disconnected()
