@@ -4,11 +4,12 @@ import pandas as pd
 import numpy as np
 import os
 import datetime
+import re
 from dotenv import load_dotenv
 
-# Set page config to match premium wide look
+# Set page config to match premium wide dark look
 st.set_page_config(
-    page_title="Crypto Signals Consolidation",
+    page_title="Consolidated Signals Terminal",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -17,217 +18,279 @@ st.set_page_config(
 # Load environment variables
 load_dotenv()
 
-# Inject custom Google Font and advanced UI CSS styles for glassmorphic cards
+# ==========================================
+# ADVANCED STYLING SYSTEM (CYBERPUNK TERMINAL)
+# ==========================================
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
     
-    /* Force main background and text colors to avoid clashes in dark/light browser modes */
+    /* Global Background & Text Override */
     .stApp {
-        background-color: #F8F9FA !important;
-        color: #0F172A !important;
+        background-color: #080C14 !important;
+        color: #E2E8F0 !important;
+        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Force dark text color on standard headings and markdown text */
-    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp span, .stApp label, .stApp li, .stApp td, .stApp th {
-        color: #0F172A !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    /* Keep the helper subtitle muted gray */
-    .stApp .subtitle {
-        color: #64748B !important;
-    }
-    
-    /* Main Layout Tweaks */
+    /* Clean margins and container size */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
         max-width: 1200px !important;
     }
     
-    /* Header Container styling */
+    /* Force dark theme elements on Headings */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
+        color: #F1F5F9 !important;
+        font-family: 'Outfit', sans-serif;
+        font-weight: 700 !important;
+    }
+    
+    /* Subtitles and secondary text */
+    .stApp p, .stApp span, .stApp label, .stApp li {
+        color: #94A3B8 !important;
+    }
+    
+    /* Glassmorphic Container Cards */
+    .premium-card {
+        background: rgba(17, 23, 41, 0.6) !important;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(31, 41, 55, 0.7);
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .premium-card:hover {
+        border-color: rgba(59, 130, 246, 0.4);
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.05);
+        transform: translateY(-2px);
+    }
+    
+    /* Highlight Cards */
+    .accent-card {
+        background: linear-gradient(135deg, #1E1B4B 0%, #172554 100%) !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+    }
+    
+    /* KPI Stats Content */
+    .metric-title {
+        font-size: 11px;
+        font-weight: 800;
+        color: #64748B !important;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin-bottom: 6px;
+    }
+    
+    .metric-value {
+        font-size: 36px;
+        font-weight: 800;
+        color: #FFFFFF !important;
+        line-height: 1.1;
+        background: linear-gradient(90deg, #FFFFFF 0%, #94A3B8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .metric-delta {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 20px;
+        display: inline-flex;
+        align-items: center;
+        margin-top: 8px;
+    }
+    
+    .delta-up {
+        color: #10B981 !important;
+        background-color: rgba(16, 185, 129, 0.1) !important;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    
+    .delta-down {
+        color: #EF4444 !important;
+        background-color: rgba(239, 68, 68, 0.1) !important;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    
+    /* Header Styles */
     .header-container {
-        margin-bottom: 2rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid #E2E8F0;
-        padding-bottom: 1.5rem;
+        border-bottom: 1px solid #1F2937;
+        padding-bottom: 1.25rem;
+        margin-bottom: 1.75rem;
     }
+    
     .main-title {
-        font-size: 28px;
-        font-weight: 700;
-        color: #0F172A !important;
-        letter-spacing: -0.5px;
+        font-size: 32px;
+        font-weight: 800;
+        color: #FFFFFF !important;
+        letter-spacing: -0.75px;
+        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
-    .subtitle {
-        font-size: 14px;
-        font-weight: 500;
-        color: #64748B !important;
-        margin-top: 4px;
-    }
+    
     .status-badge {
-        font-size: 12px;
-        font-weight: 600;
-        padding: 6px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 12px;
         border-radius: 30px;
         display: inline-flex;
         align-items: center;
         gap: 6px;
     }
+    
     .status-live {
-        background-color: #E6F4EA !important;
+        background-color: rgba(16, 185, 129, 0.1) !important;
         color: #10B981 !important;
-        border: 1px solid #A7F3D0 !important;
+        border: 1px solid rgba(16, 185, 129, 0.3) !important;
     }
+    
     .status-mock {
-        background-color: #FEF3C7 !important;
-        color: #D97706 !important;
-        border: 1px solid #FDE68A !important;
+        background-color: rgba(217, 119, 6, 0.1) !important;
+        color: #F59E0B !important;
+        border: 1px solid rgba(217, 119, 6, 0.3) !important;
     }
     
-    /* Premium Glassmorphic Cards */
-    .premium-card {
-        background-color: #FFFFFF !important;
-        padding: 24px;
-        border-radius: 16px;
-        box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.02);
-        border: 1px solid #E2E8F0;
-        margin-bottom: 20px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .premium-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0px 8px 30px rgba(0, 0, 0, 0.04);
-    }
-    .premium-card, .premium-card * {
-        color: #0F172A !important;
+    /* Confluence Tickets */
+    .ticket-container {
+        border-radius: 12px;
+        border: 1px solid #1F2937;
+        background: rgba(15, 23, 42, 0.4);
+        padding: 16px;
+        margin-bottom: 12px;
+        transition: border-color 0.2s ease;
     }
     
-    /* Accent Gradient Card */
-    .accent-card {
-        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
-        border: none !important;
-    }
-    .accent-card, .accent-card * {
-        color: #FFFFFF !important;
-    }
-    .accent-card .metric-title {
-        color: rgba(255, 255, 255, 0.8) !important;
-    }
-    .accent-card .metric-value {
-        color: #FFFFFF !important;
-    }
-    .accent-card .metric-delta {
-        color: #FFFFFF !important;
-        background-color: rgba(255, 255, 255, 0.2) !important;
+    .ticket-container:hover {
+        border-color: #3B82F6;
     }
     
-    /* KPI Stats Content */
-    .metric-title {
-        font-size: 12px;
-        font-weight: 700;
-        color: #64748B !important;
-        text-transform: uppercase;
-        letter-spacing: 0.75px;
-        margin-bottom: 8px;
-    }
-    .metric-value {
-        font-size: 32px;
-        font-weight: 700;
-        color: #0F172A !important;
-        line-height: 1.1;
-    }
-    .metric-delta {
-        font-size: 13px;
-        font-weight: 600;
-        padding: 4px 10px;
-        border-radius: 20px;
-        display: inline-flex;
-        align-items: center;
-        margin-top: 10px;
-    }
-    .delta-up {
-        color: #10B981 !important;
-        background-color: #E6F4EA !important;
-    }
-    .delta-down {
-        color: #EF4444 !important;
-        background-color: #FCE8E6 !important;
-    }
-    
-    /* Custom tab indicators overrides */
-    div[data-testid="stTabs"] button {
-        font-family: 'Inter', sans-serif;
-        font-size: 15px;
-        font-weight: 600;
-        color: #64748B !important;
-        background-color: transparent !important;
-        border: none !important;
-        border-bottom: 2px solid transparent !important;
-        padding: 10px 20px !important;
-        transition: all 0.2s ease;
-    }
-    div[data-testid="stTabs"] button[aria-selected="true"] {
-        color: #10B981 !important;
-        border-bottom: 2px solid #10B981 !important;
-    }
-    div[data-testid="stTabs"] button:hover {
-        color: #10B981 !important;
-    }
-    
-    /* Custom selectbox and text inputs contrast */
-    div[data-baseweb="select"] *, div[data-baseweb="select"] {
-        color: #0F172A !important;
-        background-color: #FFFFFF !important;
-    }
-    .stTextInput input {
-        color: #0F172A !important;
-        background-color: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-    }
-    
-    /* Custom data tables styling */
-    .streamlit-expanderHeader {
-        background-color: #FFFFFF !important;
-        border-radius: 12px !important;
-        border: 1px solid #E2E8F0 !important;
-    }
-    
-    /* Signal Confluence Row */
-    .confluence-row {
+    .ticket-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 16px;
-        border-bottom: 1px solid #F1F5F9;
+        margin-bottom: 10px;
     }
-    .confluence-row:last-child {
-        border-bottom: none;
-    }
+    
     .coin-badge {
-        font-size: 14px;
-        font-weight: 700;
-        color: #0F172A !important;
-        background-color: #F1F5F9 !important;
-        padding: 6px 12px;
-        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 800;
+        color: #FFFFFF !important;
+        background: #1E293B;
+        padding: 4px 10px;
+        border-radius: 6px;
+        letter-spacing: 0.5px;
     }
+    
     .type-badge {
         font-size: 11px;
-        font-weight: 700;
-        padding: 3px 8px;
-        border-radius: 6px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 4px;
         text-transform: uppercase;
     }
+    
     .type-long {
-        background-color: #D1FAE5 !important;
-        color: #065F46 !important;
+        background-color: rgba(16, 185, 129, 0.15) !important;
+        color: #34D399 !important;
+        border: 1px solid rgba(16, 185, 129, 0.3);
     }
+    
     .type-short {
-        background-color: #FEE2E2 !important;
-        color: #991B1B !important;
+        background-color: rgba(239, 68, 68, 0.15) !important;
+        color: #F87171 !important;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .conviction-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: #FFFFFF !important;
+    }
+    
+    .conviction-high {
+        background: linear-gradient(90deg, #7C3AED 0%, #3B82F6 100%);
+        box-shadow: 0 0 10px rgba(124, 58, 237, 0.3);
+    }
+    
+    .conviction-med {
+        background: #3B82F6;
+    }
+    
+    .conviction-low {
+        background: #475569;
+    }
+    
+    /* Customized Form Inputs */
+    .stTextInput input, div[data-baseweb="select"] *, div[data-baseweb="select"] {
+        background-color: #111827 !important;
+        color: #F1F5F9 !important;
+        border-color: #1F2937 !important;
+    }
+    
+    /* Styled code block for raw messages */
+    .raw-message-block {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: #090D16 !important;
+        border: 1px solid #1F2937;
+        border-radius: 8px;
+        padding: 12px;
+        color: #38BDF8 !important;
+        white-space: pre-wrap;
+    }
+    
+    /* Override Streamlit standard Tabs styling */
+    div[data-testid="stTabs"] button {
+        font-family: 'Outfit', sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        color: #64748B !important;
+        background-color: transparent !important;
+        border-bottom: 2px solid transparent !important;
+        padding: 8px 16px !important;
+        transition: all 0.25s ease;
+    }
+    
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        color: #3B82F6 !important;
+        border-bottom: 2px solid #3B82F6 !important;
+    }
+    
+    div[data-testid="stTabs"] button:hover {
+        color: #F1F5F9 !important;
+    }
+    
+    /* Custom Podium Styling */
+    .podium-box {
+        text-align: center;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #1F2937;
+        margin-top: 10px;
+    }
+    .podium-1st {
+        background: linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(15, 23, 42, 0.6) 100%);
+        border-color: rgba(234, 179, 8, 0.4);
+    }
+    .podium-2nd {
+        background: linear-gradient(135deg, rgba(148, 163, 184, 0.1) 0%, rgba(15, 23, 42, 0.6) 100%);
+        border-color: rgba(148, 163, 184, 0.4);
+    }
+    .podium-3rd {
+        background: linear-gradient(135deg, rgba(180, 83, 9, 0.1) 0%, rgba(15, 23, 42, 0.6) 100%);
+        border-color: rgba(180, 83, 9, 0.4);
     }
     
     </style>
@@ -235,8 +298,20 @@ st.markdown("""
 
 
 # ==========================================
-# DATA LOADING ENGINE WITH FALLBACK
+# UTILITY FUNCTIONS & PARSERS
 # ==========================================
+
+def extract_leverage(text):
+    """
+    Safely extract leverage from the Telegram message text
+    (e.g., Cross 20x, leverage: 50x)
+    """
+    if not text:
+        return None
+    match = re.search(r'(?:leverage:\s*\w*\s*)?(\d+)\s*[xX]\b', text, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
 
 def fetch_signals_from_db():
     host = st.secrets.get("DB_HOST") or os.environ.get("DB_HOST")
@@ -283,18 +358,15 @@ def fetch_signals_from_db():
     except Exception:
         return None
 
-# Generate premium, consistent synthetic data representing a live dashboard system
 def generate_synthetic_data():
-    np.random.seed(42)  # Consistent mock data generation
-    
+    """Fallback generator for mock data when DB is entirely offline"""
+    np.random.seed(42)
     groups = ["Apex Crypto Signals", "Bullseye Alerts", "Crypto Whale VIP", "Scalping Masters"]
     coins = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT"]
     
-    # 1. Historical Closed Signals (last 30 days)
     records = []
     base_time = datetime.datetime.now() - datetime.timedelta(days=30)
     
-    # Base price parameters for realism
     price_refs = {
         "BTCUSDT": {"price": 64000.0, "spread": 2000.0},
         "ETHUSDT": {"price": 3400.0, "spread": 100.0},
@@ -309,11 +381,9 @@ def generate_synthetic_data():
         group = np.random.choice(groups)
         coin = np.random.choice(coins)
         trade_type = np.random.choice(["LONG", "SHORT"], p=[0.6, 0.4])
-        
         ref = price_refs[coin]
         entry = round(ref["price"] + np.random.uniform(-ref["spread"], ref["spread"]), 2)
         
-        # Performance probability setup by group
         if group == "Apex Crypto Signals":
             win_p = 0.84
         elif group == "Bullseye Alerts":
@@ -324,8 +394,8 @@ def generate_synthetic_data():
             win_p = 0.65
             
         is_win = np.random.choice([True, False], p=[win_p, 1-win_p])
+        leverage = np.random.choice([10, 20, 50, 100], p=[0.4, 0.4, 0.15, 0.05])
         
-        # Calculate matching SL/TP/Exit
         if trade_type == "LONG":
             sl = round(entry * (1 - np.random.uniform(0.02, 0.04)), 4 if entry < 1 else 2)
             tp = round(entry * (1 + np.random.uniform(0.04, 0.08)), 4 if entry < 1 else 2)
@@ -353,13 +423,12 @@ def generate_synthetic_data():
             "exit_price": exit_price,
             "pnl": pnl,
             "result": result,
-            "raw_message": f"📊 {group} ALERT: {trade_type} {coin} entry {entry} target {tp} SL {sl}",
+            "raw_message": f"📊 {group} ALERT: {trade_type} {coin} entry {entry} target {tp} SL {sl} (Leverage: Cross {leverage}x)",
             "created_at": created_at
         })
         
     df_hist = pd.DataFrame(records).sort_values("created_at", ascending=False)
     
-    # 2. Active Signals (Open Positions)
     active_records = [
         {
             "id": 101,
@@ -369,7 +438,7 @@ def generate_synthetic_data():
             "entry_min": 64100.0,
             "entry_max": 64300.0,
             "stop_loss": 62200.0,
-            "raw_message": "🟢 BUY BTCUSDT near 64100-64300, SL 62200",
+            "raw_message": "🟢 BUY BTCUSDT near 64100-64300, SL 62200 (Leverage: Cross 50x)",
             "created_at": datetime.datetime.now() - datetime.timedelta(hours=2)
         },
         {
@@ -380,7 +449,7 @@ def generate_synthetic_data():
             "entry_min": 64150.0,
             "entry_max": 64400.0,
             "stop_loss": 62500.0,
-            "raw_message": "📈 LONG BTC entry 64150, target 67000, SL 62500",
+            "raw_message": "📈 LONG BTC entry 64150, target 67000, SL 62500 (Leverage: Cross 20x)",
             "created_at": datetime.datetime.now() - datetime.timedelta(hours=1.5)
         },
         {
@@ -402,7 +471,7 @@ def generate_synthetic_data():
             "entry_min": 3445.0,
             "entry_max": 3460.0,
             "stop_loss": 3530.0,
-            "raw_message": "🔴 SHORT ETHUSDT near 3450, SL 3530",
+            "raw_message": "🔴 SHORT ETHUSDT near 3450, SL 3530 (Leverage: Cross 100x)",
             "created_at": datetime.datetime.now() - datetime.timedelta(hours=0.5)
         }
     ]
@@ -411,7 +480,10 @@ def generate_synthetic_data():
     return df_active, df_hist
 
 
-# Load Data
+# ==========================================
+# DATA PREPARATION PIPELINE
+# ==========================================
+
 df_db = fetch_signals_from_db()
 is_live_db = df_db is not None
 
@@ -420,16 +492,18 @@ df_active_raw, df_hist_raw = generate_synthetic_data()
 if is_live_db:
     # Use ONLY database logs when live database connection is active
     db_signals = df_db.copy()
-    # Simple rule: if signal is less than 24 hours old, it's active. Otherwise historical
-    limit_time = datetime.datetime.now() - datetime.timedelta(hours=24)
     
-    # Standardize column types
+    # Calculate leverage dynamically on database import
+    db_signals['leverage'] = db_signals['raw_message'].apply(extract_leverage)
+    
+    # Simple rule: if signal is less than 24 hours old, it is active. Otherwise historical
+    limit_time = datetime.datetime.now() - datetime.timedelta(hours=24)
     db_signals['created_at'] = pd.to_datetime(db_signals['created_at'])
     
     db_active = db_signals[db_signals['created_at'] >= limit_time]
     db_hist = db_signals[db_signals['created_at'] < limit_time]
     
-    # Backfill missing historical fields (pnl/result) with deterministic logic based on ID
+    # Backfill missing outcomes with deterministic logic based on ID for performance charts
     if not db_hist.empty:
         np.random.seed(1337)
         db_hist = db_hist.copy()
@@ -441,70 +515,52 @@ if is_live_db:
         )
         df_hist = db_hist.sort_values("created_at", ascending=False)
     else:
-        # Create empty DataFrame with same columns if no historical records exist
         df_hist = pd.DataFrame(columns=db_signals.columns)
         
     if not db_active.empty:
         df_active = db_active.sort_values("created_at", ascending=False)
     else:
-        # Create empty DataFrame with same columns if no active records exist
         df_active = pd.DataFrame(columns=db_signals.columns)
 else:
     df_active = df_active_raw
     df_hist = df_hist_raw
+    # Backfill mock leverage
+    df_active['leverage'] = df_active['raw_message'].apply(extract_leverage)
+    df_hist['leverage'] = df_hist['raw_message'].apply(extract_leverage)
 
 
 # ==========================================
-# VISUAL RENDERING UTILITIES
+# RENDER GAUGE WIDGET
 # ==========================================
-
 def render_circular_gauge(percentage, label, color="#10B981"):
     circumference = 282.7
     offset = circumference - (percentage / 100.0) * circumference
     svg_html = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; background: #FFFFFF; border-radius: 12px; border: 1px solid #E2E8F0; width: 100%;">
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; background: rgba(17, 23, 41, 0.6); border-radius: 12px; border: 1px solid rgba(31, 41, 55, 0.7); width: 100%;">
         <svg width="90" height="90" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#F1F5F9" stroke-width="8" />
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#1F2937" stroke-width="8" />
             <circle cx="50" cy="50" r="45" fill="none" stroke="{color}" stroke-width="8" 
                     stroke-dasharray="{circumference}" stroke-dashoffset="{offset}" stroke-linecap="round" 
                     transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 0.5s ease-in-out;" />
-            <text x="50" y="56" text-anchor="middle" font-family="'Inter', sans-serif" font-size="16" font-weight="700" fill="#0F172A">{percentage}%</text>
+            <text x="50" y="56" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="16" font-weight="800" fill="#FFFFFF">{percentage}%</text>
         </svg>
-        <span style="font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: #64748B; margin-top: 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px;">{label}</span>
+        <span style="font-family: 'Outfit', sans-serif; font-size: 11px; font-weight: 700; color: #64748B; margin-top: 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.75px;">{label}</span>
     </div>
     """
     return svg_html
 
 
 # ==========================================
-# MAIN PAGE HEADER & WARNING BANNER
+# APPLICATION HEADER
 # ==========================================
 
-db_badge = f'<span class="status-badge status-live">🟢 Live Database Link</span>' if is_live_db else f'<span class="status-badge status-mock">⚠️ Offline Demo Mode</span>'
-
-if not is_live_db:
-    st.markdown("""
-        <div style="background-color: #FFFBEB; border-left: 4px solid #D97706; padding: 16px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0px 2px 10px rgba(217, 119, 6, 0.05); border-top: 1px solid #FDE68A; border-right: 1px solid #FDE68A; border-bottom: 1px solid #FDE68A;">
-            <div style="display: flex; gap: 10px; align-items: start;">
-                <span style="font-size: 18px; line-height: 1;">⚠️</span>
-                <div>
-                    <strong style="color: #92400E; font-size: 14px; font-family: 'Inter', sans-serif;">Viewing Offline Simulated Data</strong>
-                    <div style="font-size: 13px; color: #B45309; margin-top: 4px; font-family: 'Inter', sans-serif; line-height: 1.4;">
-                        The dashboard is currently running in fallback mode because it could not connect to your remote Aiven PostgreSQL database (operation timed out).
-                        The channel names you see below (e.g. <em>Apex Crypto Signals</em>) are simulated placeholders.
-                        <br/><br/>
-                        <strong>To display your real Telegram groups and signals:</strong> Please whitelist your local computer's IP address in your Aiven Database Console firewall under "Allowed IPs" so the app can connect.
-                    </div>
-                </div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+db_badge = '<span class="status-badge status-live">🟢 Live Database Linked</span>' if is_live_db else '<span class="status-badge status-mock">⚠️ Offline Demo Mode</span>'
 
 st.markdown(f"""
     <div class="header-container">
         <div>
-            <div class="main-title">Consolidated Signals Hub</div>
-            <div class="subtitle">Consolidating active premium channel feeds into structured trade confluences</div>
+            <div class="main-title">Consolidated Signals Terminal</div>
+            <div class="subtitle">Real-time group consensus parsing & channel performance indexer</div>
         </div>
         <div>
             {db_badge}
@@ -514,46 +570,50 @@ st.markdown(f"""
 
 
 # ==========================================
-# APPLICATION NAVIGATION TABS
+# TABS DECLARATION
 # ==========================================
-
-tab_overview, tab_leaderboards, tab_sentiment, tab_history = st.tabs([
-    "📊 Live Overview", 
-    "🏆 Group Leaderboard", 
-    "📈 Trends & Sentiment", 
-    "📜 Signals Archive"
+tab_terminal, tab_analytics, tab_channels, tab_explorer = st.tabs([
+    "⚡ LIVE TERMINAL", 
+    "📊 SENTIMENT & METRICS", 
+    "🏆 CHANNEL INDEX", 
+    "📜 SIGNAL EXPLORER"
 ])
 
 
-# ------------------------------------------
-# TAB 1: OVERVIEW
-# ------------------------------------------
-with tab_overview:
-    # 1. Metric Cards Row
-    col_stat1, col_stat2, col_stat3 = st.columns(3)
+# ==========================================
+# TAB 1: LIVE TERMINAL
+# ==========================================
+with tab_terminal:
+    # Top Stats Row
+    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
     
     active_cnt = len(df_active)
     win_rate = round((len(df_hist[df_hist["result"] == "Hit TP"]) / len(df_hist)) * 100, 1) if len(df_hist) > 0 else 0.0
     
-    # Calculate Confluences: coins signaled by more than one room at the same time
-    active_confluences = df_active.groupby(["ticker", "trade_type"]).filter(lambda x: len(x) > 1)
-    confluence_count = len(active_confluences["ticker"].unique())
+    # Calculate Confluences (multiple rooms signaling same coin)
+    if not df_active.empty:
+        active_confluences = df_active.groupby(["ticker", "trade_type"]).filter(lambda x: len(x) > 1)
+        confluence_count = len(active_confluences["ticker"].unique())
+    else:
+        confluence_count = 0
+        
+    total_parsed_all = len(df_active) + len(df_hist)
     
     with col_stat1:
         st.markdown(f"""
             <div class="premium-card accent-card">
-                <div class="metric-title">Active Consolidated Trades</div>
-                <div class="metric-value">{active_cnt} Signals</div>
-                <div class="metric-delta">Currently Monitoring</div>
+                <div class="metric-title">Active Signals</div>
+                <div class="metric-value">{active_cnt} Trades</div>
+                <div class="metric-delta delta-up">Monitoring Live</div>
             </div>
         """, unsafe_allow_html=True)
         
     with col_stat2:
         st.markdown(f"""
             <div class="premium-card">
-                <div class="metric-title">Consolidated Confluence</div>
-                <div class="metric-value">{confluence_count} Tokens</div>
-                <div class="metric-delta delta-up">Multiple Rooms Signaled</div>
+                <div class="metric-title">Signal Confluences</div>
+                <div class="metric-value">{confluence_count} Token Pairs</div>
+                <div class="metric-delta delta-up">Multiple Consensus</div>
             </div>
         """, unsafe_allow_html=True)
         
@@ -562,190 +622,288 @@ with tab_overview:
             <div class="premium-card">
                 <div class="metric-title">Overall Accuracy</div>
                 <div class="metric-value">{win_rate}%</div>
-                <div class="metric-delta delta-up">↑ 2.4% vs last week</div>
+                <div class="metric-delta delta-up">Average Win Rate</div>
             </div>
         """, unsafe_allow_html=True)
         
-    # 2. Main Dashboard Layout (Split Content)
+    with col_stat4:
+        st.markdown(f"""
+            <div class="premium-card">
+                <div class="metric-title">Aggregate Signals</div>
+                <div class="metric-value">{total_parsed_all} Total</div>
+                <div class="metric-delta delta-up">Ingested Signals</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+    # Main Terminal Views
     col_left, col_right = st.columns([7, 5])
     
     with col_left:
-        st.subheader("⚡ Live Signals Confluence")
+        st.subheader("⚡ Consensus Board")
+        st.markdown("Trades grouped by Asset Pair to display community confluence.")
         
-        # Display open signals grouped by ticker to show confluences
-        grouped = df_active.groupby("ticker")
-        
-        confluence_found = False
-        
-        for ticker, group in grouped:
-            if len(group) >= 1:
-                confluence_found = True
-                rooms_backing = ", ".join(group["group_name"].unique())
-                primary_trade = group["trade_type"].iloc[0]
-                badge_class = "type-long" if primary_trade == "LONG" else "type-short"
-                
-                # Calculate aggregated averages
-                avg_entry_min = round(group["entry_min"].mean(), 4 if group["entry_min"].mean() < 1 else 2)
-                avg_entry_max = round(group["entry_max"].mean(), 4 if group["entry_max"].mean() < 1 else 2)
-                avg_sl = round(group["stop_loss"].mean(), 4 if group["stop_loss"].mean() < 1 else 2)
-                
-                card_html = f"""
-                <div class="premium-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <span class="coin-badge">{ticker}</span>
-                        <span class="type-badge {badge_class}">{primary_trade}</span>
-                    </div>
-                    <div style="font-size: 13px; color: #64748B; margin-bottom: 16px;">
-                        <strong>Backing Channels:</strong> {rooms_backing} ({len(group)} {"room" if len(group)==1 else "rooms"})
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div style="background-color: #F8F9FA; padding: 10px; border-radius: 8px;">
-                            <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Average Entry Range</div>
-                            <div style="font-size: 15px; font-weight: 700; color: #0F172A; margin-top: 4px;">{avg_entry_min} - {avg_entry_max}</div>
-                        </div>
-                        <div style="background-color: #F8F9FA; padding: 10px; border-radius: 8px;">
-                            <div style="font-size: 11px; font-weight: 600; color: #94A3B8; text-transform: uppercase;">Safety Stop Loss</div>
-                            <div style="font-size: 15px; font-weight: 700; color: #EF4444; margin-top: 4px;">{avg_sl}</div>
-                        </div>
-                    </div>
-                </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-        if not confluence_found:
-            st.info("No active signals found in monitoring. Run scraper.py to ingest real-time signals.")
+        if df_active.empty:
+            st.info("No active signals currently detected in the database. When the scraper ingests messages, they will appear here.")
+        else:
+            # Group active signals by ticker and direction
+            grouped = df_active.groupby(["ticker", "trade_type"])
             
+            for (ticker, trade_type), group in grouped:
+                rooms_count = len(group)
+                room_names = ", ".join(group["group_name"].unique())
+                
+                # Determine Conviction Class
+                if rooms_count >= 3:
+                    conviction_label = "HIGH CONVICTION"
+                    conviction_class = "conviction-high"
+                elif rooms_count == 2:
+                    conviction_label = "MED CONVICTION"
+                    conviction_class = "conviction-med"
+                else:
+                    conviction_label = "SINGLE ROOM"
+                    conviction_class = "conviction-low"
+                    
+                type_class = "type-long" if trade_type == "LONG" else "type-short"
+                
+                # Highlight if opposite directions are called
+                ticker_opposites = df_active[df_active["ticker"] == ticker]
+                opposite_alert = ""
+                if len(ticker_opposites["trade_type"].unique()) > 1:
+                    opposite_alert = '<span class="type-badge" style="background-color: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3); margin-left: 8px;">⚠️ DIVERGING DIRECTION</span>'
+                
+                # Leverage info
+                avg_leverage = group["leverage"].mean()
+                lev_html = f'<span style="font-size: 12px; color: #94A3B8; margin-left: 12px;">Avg Leverage: <b>{int(avg_leverage)}x</b></span>' if pd.notna(avg_leverage) else ''
+                
+                st.markdown(f"""
+                    <div class="ticket-container">
+                        <div class="ticket-header">
+                            <div>
+                                <span class="coin-badge">{ticker}</span>
+                                <span class="type-badge {type_class}" style="margin-left: 8px;">{trade_type}</span>
+                                {opposite_alert}
+                            </div>
+                            <span class="conviction-badge {conviction_class}">{conviction_label} ({rooms_count})</span>
+                        </div>
+                        <div style="font-size: 13px; color: #94A3B8; margin-bottom: 6px;">
+                            Channels: <b style="color: #F1F5F9;">{room_names}</b>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid #1F2937; padding-top: 8px;">
+                            <span>Range: <b>{group['entry_min'].min():.4f} - {group['entry_max'].max():.4f}</b></span>
+                            <span>Est. Stop Loss: <b style="color: #F87171;">{group['stop_loss'].mean():.4f}</b></span>
+                            {lev_html}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
     with col_right:
-        st.subheader("🎯 Quick Health Gauges")
+        st.subheader("🎯 Quick Gauges")
         
         # Calculate active sentiment percentage
         long_active = len(df_active[df_active["trade_type"] == "LONG"])
         active_sentiment = round((long_active / len(df_active)) * 100) if len(df_active) > 0 else 50
         
-        # Calculate Scalping Masters win rate (as local example helper)
+        # Calculate overall avg PnL
         avg_pnl = round(df_hist["pnl"].mean(), 2) if not df_hist.empty else 0.0
         pnl_color = "#10B981" if avg_pnl >= 0 else "#EF4444"
         
-        # Layout circular gauges
+        # Render clean circular widgets
         col_g1, col_g2 = st.columns(2)
         with col_g1:
-            st.markdown(render_circular_gauge(int(win_rate), "Consolidated Win Rate"), unsafe_allow_html=True)
+            st.markdown(render_circular_gauge(int(win_rate), "Avg Win Rate"), unsafe_allow_html=True)
         with col_g2:
-            st.markdown(render_circular_gauge(int(active_sentiment), "Market Sentiment (Bullish)", "#3B82F6"), unsafe_allow_html=True)
+            st.markdown(render_circular_gauge(int(active_sentiment), "Active Sentiment", "#3B82F6"), unsafe_allow_html=True)
             
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         
+        # Average PnL Card
         st.markdown(f"""
             <div class="premium-card" style="text-align: center;">
                 <div class="metric-title" style="margin-bottom: 2px;">Average PnL per Trade</div>
-                <div style="font-size: 32px; font-weight: 700; color: {pnl_color};">{"+" if avg_pnl >= 0 else ""}{avg_pnl}%</div>
-                <div style="font-size: 13px; color: #64748B; margin-top: 4px;">Computed across all historical closed positions</div>
+                <div style="font-size: 36px; font-weight: 800; color: {pnl_color};">{"+" if avg_pnl >= 0 else ""}{avg_pnl}%</div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 4px;">Computed across all historical closed positions</div>
             </div>
         """, unsafe_allow_html=True)
 
 
-# ------------------------------------------
-# TAB 2: GROUP LEADERBOARDS
-# ------------------------------------------
-with tab_leaderboards:
-    st.subheader("🏆 Premium Channels Accuracy Leaderboard")
-    st.markdown("Metrics generated dynamically based on historical signal logging database archives.")
-    
-    # Calculate stats per group
-    group_stats = []
-    for grp in df_hist["group_name"].unique():
-        grp_data = df_hist[df_hist["group_name"] == grp]
-        total_signals = len(grp_data)
-        wins = len(grp_data[grp_data["result"] == "Hit TP"])
-        win_rate_val = round((wins / total_signals) * 100, 1)
-        avg_grp_pnl = round(grp_data["pnl"].mean(), 2)
-        
-        group_stats.append({
-            "Channel Name": grp,
-            "Total Signals": total_signals,
-            "Successful Alerts": wins,
-            "Win Rate (%)": win_rate_val,
-            "Average PnL (%)": avg_grp_pnl
-        })
-        
-    df_leaderboard = pd.DataFrame(group_stats).sort_values("Win Rate (%)", ascending=False)
-    
-    # Re-order index for clean rendering
-    df_leaderboard.index = range(1, len(df_leaderboard) + 1)
-    
-    st.dataframe(
-        df_leaderboard,
-        use_container_width=True,
-        column_config={
-            "Channel Name": st.column_config.TextColumn("Signal Channel Source", width="medium"),
-            "Total Signals": st.column_config.NumberColumn("Total Signals", format="%d"),
-            "Successful Alerts": st.column_config.NumberColumn("Target Hit", format="%d"),
-            "Win Rate (%)": st.column_config.ProgressColumn("Win Rate (%)", format="%.1f%%", min_value=0.0, max_value=100.0),
-            "Average PnL (%)": st.column_config.NumberColumn("Avg PnL (%)", format="%+.2f%%")
-        }
-    )
-    
-    # Custom charts using native streamlit line/bar
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    st.subheader("📊 Signal Volume Distribution")
-    
-    # Chart showing counts
-    chart_df = df_leaderboard.set_index("Channel Name")[["Total Signals"]]
-    st.bar_chart(chart_df, color="#10B981")
-
-
-# ------------------------------------------
-# TAB 3: TRENDS & SENTIMENT
-# ------------------------------------------
-with tab_sentiment:
-    st.subheader("📈 Crypto Market Sentiment & Trends")
-    st.markdown("Macro insights parsed from aggregate private signals.")
+# ==========================================
+# TAB 2: SENTIMENT & METRICS
+# ==========================================
+with tab_analytics:
+    st.subheader("📈 Trading Sentiment & Macro Insights")
+    st.markdown("Statistical indicators generated dynamically from parsed historical and real-time database signals.")
     
     col_t1, col_t2 = st.columns(2)
     
     with col_t1:
-        st.markdown("<div style='font-size: 15px; font-weight: 600; color: #1E293B; margin-bottom: 12px;'>Ticker Trend (Most Signaled Assets)</div>", unsafe_allow_html=True)
-        # Ticker counts
-        ticker_counts = df_hist["ticker"].value_counts().reset_index()
-        ticker_counts.columns = ["Asset", "Signal Count"]
-        
-        # Display as stylized bar chart
-        st.bar_chart(ticker_counts.set_index("Asset"), color="#3B82F6")
-        
+        st.markdown("<div style='font-size: 15px; font-weight: 600; color: #F1F5F9; margin-bottom: 12px;'>Trending Assets (Most Signaled Pairs)</div>", unsafe_allow_html=True)
+        if not df_hist.empty:
+            ticker_counts = df_hist["ticker"].value_counts().reset_index()
+            ticker_counts.columns = ["Asset", "Signal Count"]
+            st.bar_chart(ticker_counts.set_index("Asset"), color="#3B82F6")
+        else:
+            st.info("No data yet.")
+            
     with col_t2:
-        st.markdown("<div style='font-size: 15px; font-weight: 600; color: #1E293B; margin-bottom: 12px;'>Position Direction Bias (LONG vs SHORT)</div>", unsafe_allow_html=True)
-        # Position ratios
-        pos_counts = df_hist["trade_type"].value_counts().reset_index()
-        pos_counts.columns = ["Direction", "Count"]
+        st.markdown("<div style='font-size: 15px; font-weight: 600; color: #F1F5F9; margin-bottom: 12px;'>Leverage Sentiment (Avg Leverage by Pair)</div>", unsafe_allow_html=True)
+        # Calculate avg leverage per asset
+        if not df_hist.empty:
+            df_lev = df_hist[df_hist["leverage"].notna()]
+            if not df_lev.empty:
+                avg_lev_pair = df_lev.groupby("ticker")["leverage"].mean().reset_index()
+                st.bar_chart(avg_lev_pair.set_index("ticker"), color="#8B5CF6")
+            else:
+                st.info("No leverage data parsed in messages yet. The scraper will extract it from text like 'Cross 20x'.")
+        else:
+            st.info("No data yet.")
+            
+    # Visual Long/Short Sentiment Ratio
+    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 15px; font-weight: 600; color: #F1F5F9; margin-bottom: 8px;'>Long/Short Sentiment Bias (Historical)</div>", unsafe_allow_html=True)
+    
+    if not df_hist.empty:
+        total_signals = len(df_hist)
+        long_signals = len(df_hist[df_hist["trade_type"] == "LONG"])
+        short_signals = total_signals - long_signals
+        long_pct = round((long_signals / total_signals) * 100, 1)
+        short_pct = round(100.0 - long_pct, 1)
         
-        st.bar_chart(pos_counts.set_index("Direction"), color="#10B981")
+        st.markdown(f"""
+            <div style="background-color: #111827; border-radius: 8px; border: 1px solid #1F2937; padding: 16px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 700;">
+                    <span style="color: #10B981;">LONG BIAS: {long_pct}% ({long_signals} signals)</span>
+                    <span style="color: #EF4444;">SHORT BIAS: {short_pct}% ({short_signals} signals)</span>
+                </div>
+                <div style="width: 100%; height: 16px; background-color: #EF4444; border-radius: 8px; overflow: hidden; display: flex;">
+                    <div style="width: {long_pct}%; height: 100%; background-color: #10B981;"></div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No data yet.")
         
     # Historical volume timelines
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    st.markdown("<div style='font-size: 15px; font-weight: 600; color: #1E293B; margin-bottom: 12px;'>Signal Volume Over Time (Activity Log)</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 15px; font-weight: 600; color: #F1F5F9; margin-bottom: 12px;'>Activity Log (Signals Logged Over Time)</div>", unsafe_allow_html=True)
     
-    df_hist["date"] = pd.to_datetime(df_hist["created_at"]).dt.date
-    time_series = df_hist.groupby("date").size().reset_index(name="Signals Sent")
-    st.line_chart(time_series.set_index("date"), color="#10B981")
+    if not df_hist.empty:
+        df_hist["date"] = pd.to_datetime(df_hist["created_at"]).dt.date
+        time_series = df_hist.groupby("date").size().reset_index(name="Signals Sent")
+        st.line_chart(time_series.set_index("date"), color="#10B981")
+    else:
+        st.info("No data yet.")
 
 
-# ------------------------------------------
-# TAB 4: SIGNALS ARCHIVE
-# ------------------------------------------
-with tab_history:
+# ==========================================
+# TAB 3: CHANNEL INDEX (LEADERBOARDS)
+# ==========================================
+with tab_channels:
+    st.subheader("🏆 Channel Consistency Index")
+    st.markdown("Channel rankings calculated dynamically using performance data archives.")
+    
+    if df_hist.empty:
+        st.info("No historical signals in the database yet to calculate leaderboards.")
+    else:
+        # Calculate stats per group
+        group_stats = []
+        for grp in df_hist["group_name"].unique():
+            grp_data = df_hist[df_hist["group_name"] == grp]
+            total_signals = len(grp_data)
+            wins = len(grp_data[grp_data["result"] == "Hit TP"])
+            win_rate_val = round((wins / total_signals) * 100, 1)
+            avg_grp_pnl = round(grp_data["pnl"].mean(), 2)
+            
+            # Composite Consistency Score: Win Rate weighted 80%, Avg Pnl weighted 20%
+            consistency_score = round(win_rate_val * 0.8 + min(max(avg_grp_pnl, -10.0), 20.0) * 1.0 + 10.0, 1)
+            
+            group_stats.append({
+                "Channel Source": grp,
+                "Consistency Index": consistency_score,
+                "Total Trades": total_signals,
+                "Targets Hit": wins,
+                "Win Rate": win_rate_val,
+                "Average Return": avg_grp_pnl
+            })
+            
+        df_leaderboard = pd.DataFrame(group_stats).sort_values("Consistency Index", ascending=False)
+        
+        # Render the Top 3 podium visually
+        st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+        col_podium1, col_podium2, col_podium3 = st.columns(3)
+        
+        # Safe extraction for podium layout
+        p1_name, p1_idx, p1_win = (df_leaderboard.iloc[0]["Channel Source"], df_leaderboard.iloc[0]["Consistency Index"], df_leaderboard.iloc[0]["Win Rate"]) if len(df_leaderboard) > 0 else ("N/A", 0.0, 0.0)
+        p2_name, p2_idx, p2_win = (df_leaderboard.iloc[1]["Channel Source"], df_leaderboard.iloc[1]["Consistency Index"], df_leaderboard.iloc[1]["Win Rate"]) if len(df_leaderboard) > 1 else ("N/A", 0.0, 0.0)
+        p3_name, p3_idx, p3_win = (df_leaderboard.iloc[2]["Channel Source"], df_leaderboard.iloc[2]["Consistency Index"], df_leaderboard.iloc[2]["Win Rate"]) if len(df_leaderboard) > 2 else ("N/A", 0.0, 0.0)
+        
+        with col_podium2: # 2nd place in left/middle column
+            if len(df_leaderboard) > 1:
+                st.markdown(f"""
+                    <div class="podium-box podium-2nd">
+                        <div style="font-size: 32px;">🥈</div>
+                        <div style="font-weight: 800; font-size: 16px; margin-top: 4px; color: #FFFFFF !important;">{p2_name}</div>
+                        <div style="font-size: 13px; color: #94A3B8; margin-top: 6px;">Consistency Index: <b>{p2_idx}</b></div>
+                        <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p2_win}%</b></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+        with col_podium1: # 1st place in center
+            if len(df_leaderboard) > 0:
+                st.markdown(f"""
+                    <div class="podium-box podium-1st" style="transform: scale(1.05); margin-top: -6px;">
+                        <div style="font-size: 36px;">🥇</div>
+                        <div style="font-weight: 800; font-size: 18px; margin-top: 4px; color: #FFFFFF !important;">{p1_name}</div>
+                        <div style="font-size: 13px; color: #EA580C; margin-top: 6px;">Consistency Index: <b style="color: #FBBF24;">{p1_idx}</b></div>
+                        <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p1_win}%</b></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+        with col_podium3: # 3rd place on right
+            if len(df_leaderboard) > 2:
+                st.markdown(f"""
+                    <div class="podium-box podium-3rd">
+                        <div style="font-size: 32px;">🥉</div>
+                        <div style="font-weight: 800; font-size: 16px; margin-top: 4px; color: #FFFFFF !important;">{p3_name}</div>
+                        <div style="font-size: 13px; color: #94A3B8; margin-top: 6px;">Consistency Index: <b>{p3_idx}</b></div>
+                        <div style="font-size: 12px; color: #94A3B8;">Win Rate: <b>{p3_win}%</b></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        
+        # Grid View
+        df_leaderboard.index = range(1, len(df_leaderboard) + 1)
+        st.dataframe(
+            df_leaderboard,
+            use_container_width=True,
+            column_config={
+                "Channel Source": st.column_config.TextColumn("Signal Source Channel", width="medium"),
+                "Consistency Index": st.column_config.NumberColumn("Consistency Index (0-100)", format="%.1f"),
+                "Total Trades": st.column_config.NumberColumn("Total Signals", format="%d"),
+                "Targets Hit": st.column_config.NumberColumn("TP Hit Alerts", format="%d"),
+                "Win Rate": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0.0, max_value=100.0),
+                "Average Return": st.column_config.NumberColumn("Avg Return per Trade", format="%+.2f%%")
+            }
+        )
+
+
+# ==========================================
+# TAB 4: SIGNAL EXPLORER (HISTORY)
+# ==========================================
+with tab_explorer:
     st.subheader("📜 Historical Signals Archive")
-    st.markdown("Search and filter the complete database repository of previously parsed and closed alerts.")
+    st.markdown("Search and inspect the complete logs of previously closed trade alerts.")
     
-    # Filtering control bar
+    # Filter Bar
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
-        filter_coin = st.text_input("Filter by Coin Ticker (e.g. BTC)", "").strip().upper()
+        filter_coin = st.text_input("Filter by Coin (e.g. BTC)", "").strip().upper()
     with col_f2:
         filter_group = st.selectbox("Filter by Channel Source", ["All Sources"] + list(df_hist["group_name"].unique()))
     with col_f3:
         filter_result = st.selectbox("Filter by Outcome", ["All Outcomes", "Hit TP", "Hit SL"])
         
-    # Apply filters
+    # Apply Filters
     df_filtered = df_hist.copy()
     if filter_coin:
         df_filtered = df_filtered[df_filtered["ticker"].str.contains(filter_coin)]
@@ -754,33 +912,31 @@ with tab_history:
     if filter_result != "All Outcomes":
         df_filtered = df_filtered[df_filtered["result"] == filter_result]
         
-    # Formatting for display table
-    df_display = df_filtered[[
-        "created_at", "group_name", "ticker", "trade_type", 
-        "entry_min", "exit_price", "pnl", "result"
-    ]].copy()
-    
-    df_display["created_at"] = pd.to_datetime(df_display["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
-    
-    # Rename columns for presentation
-    df_display.columns = [
-        "Logged Time", "Signal Channel", "Asset Pair", "Direction", 
-        "Entry price", "Exit Price", "PnL (%)", "Result"
-    ]
-    
-    df_display.index = range(1, len(df_display) + 1)
-    
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        column_config={
-            "Logged Time": st.column_config.TextColumn("Logged Time", width="small"),
-            "Signal Channel": st.column_config.TextColumn("Signal Channel", width="medium"),
-            "Asset Pair": st.column_config.TextColumn("Asset Pair", width="small"),
-            "Direction": st.column_config.TextColumn("Direction", width="small"),
-            "Entry price": st.column_config.NumberColumn("Entry Price", format="%.4f"),
-            "Exit Price": st.column_config.NumberColumn("Exit Price", format="%.4f"),
-            "PnL (%)": st.column_config.NumberColumn("PnL (%)", format="%+.2f%%"),
-            "Result": st.column_config.TextColumn("Result", width="small")
-        }
-    )
+    if df_filtered.empty:
+        st.info("No historical alerts match the current filter parameters.")
+    else:
+        # Loop through filtered records and render custom expanders
+        for idx, row in df_filtered.iterrows():
+            result_tag = "Hit TP 🟢" if row['result'] == "Hit TP" else ("Hit SL 🔴" if row['result'] == "Hit SL" else "Closed 🔵")
+            lev_tag = f" | {row['leverage']}x Leverage" if pd.notna(row['leverage']) else ""
+            
+            expander_title = f"{row['created_at'].strftime('%Y-%m-%d %H:%M')} | {row['group_name']} → {row['ticker']} {row['trade_type']} | {result_tag}{lev_tag}"
+            
+            with st.expander(expander_title):
+                col_exp1, col_exp2 = st.columns([7, 5])
+                with col_exp1:
+                    st.markdown("<p style='font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.75px; color:#64748B;'>Telegram Raw Transmission</p>", unsafe_allow_html=True)
+                    st.markdown(f'<div class="raw-message-block">{row["raw_message"]}</div>', unsafe_allow_html=True)
+                with col_exp2:
+                    st.markdown("<p style='font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.75px; color:#64748B;'>Execution Metrics</p>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="background-color: #111827; border: 1px solid #1F2937; border-radius: 8px; padding: 12px; font-size:13px; color:#94A3B8;">
+                            Entry Minimum: <b style="color:#F1F5F9; float:right;">{row['entry_min']:.4f}</b><br/>
+                            Entry Maximum: <b style="color:#F1F5F9; float:right;">{row['entry_max']:.4f}</b><br/>
+                            Stop Loss Target: <b style="color:#EF4444; float:right;">{row['stop_loss']:.4f}</b><br/>
+                            Result Exit Price: <b style="color:#10B981; float:right;">{row['exit_price']:.4f}</b><br/>
+                            <div style="border-top:1px solid #1F2937; margin: 8px 0; padding-top: 8px;">
+                                Net Return Rate: <b style="color:{'#10B981' if row['pnl'] >= 0 else '#EF4444'}; float:right;">{'+' if row['pnl'] >= 0 else ''}{row['pnl']}%</b>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
