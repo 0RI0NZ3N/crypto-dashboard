@@ -1,5 +1,6 @@
 import os
 import re
+import datetime
 import http.server
 import socketserver
 import threading
@@ -191,18 +192,23 @@ async def my_event_handler(event):
             print(f"❌ Database log error: {e}")
 
 async def scrape_history():
-    print("⏳ Scraping historical messages from monitored channels...")
+    print("⏳ Scraping historical messages from monitored channels (back to Jan 1, 2026)...")
     if not DB_PARAMS["host"]:
         print("⚠️ Database credentials not specified. Skipping history sync.")
         return
         
+    target_date = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cursor = conn.cursor()
         for channel_id in CHANNELS:
             try:
-                # Fetch last 30 messages from each channel
-                async for message in client.iter_messages(channel_id, limit=30):
+                print(f"🔄 Syncing history for channel {channel_id}...")
+                # Fetch messages going backwards until target_date
+                async for message in client.iter_messages(channel_id, limit=None):
+                    if message.date < target_date:
+                        break
                     if not message.text:
                         continue
                     parsed = parse_signal_text(message.text)
