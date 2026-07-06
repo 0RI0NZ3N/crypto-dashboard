@@ -570,11 +570,14 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 .trend-flat { color: #64748B; }
 
 /* Heatmap table (channel x coin win-rate matrix) */
+/* Wide asset-by-channel grids don't fit a phone screen — scroll the table
+   itself horizontally rather than letting it overflow or squash unreadably. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .heatmap-table { width: 100%; border-collapse: separate; border-spacing: 4px; font-size: 11.5px; }
-.heatmap-table th { color: #64748B; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; padding: 4px 8px; text-align: center; }
-.heatmap-table td { text-align: center; padding: 8px 6px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #0B0F1A; }
+.heatmap-table th { color: #64748B; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; padding: 4px 8px; text-align: center; white-space: nowrap; }
+.heatmap-table td { text-align: center; padding: 8px 6px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #0B0F1A; white-space: nowrap; }
 .heatmap-table td.hm-empty { background: #131B2E !important; color: #334155; font-weight: 400; }
-.heatmap-table .hm-rowlabel { text-align: right; color: #CBD5E1; font-family: 'Space Grotesk', sans-serif; font-weight: 700; padding-right: 10px; }
+.heatmap-table .hm-rowlabel { text-align: right; color: #CBD5E1; font-family: 'Space Grotesk', sans-serif; font-weight: 700; padding-right: 10px; white-space: nowrap; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    GAUGES
@@ -622,17 +625,34 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 .m-strip {
     display: none;
     position: sticky;
-    top: 0; z-index: 999;
+    /* Sits directly under .t-nav (also sticky, top:0, 56px tall) — top:0
+       here would make the two overlap/fight for the same spot on scroll. */
+    top: 56px; z-index: 999;
     background: rgba(8,12,22,0.97);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid #1E2A3A;
-    padding: 10px 16px;
+    padding: 10px 12px;
     justify-content: space-around;
     align-items: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
 }
 .m-metric { text-align: center; }
 .m-lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #334155; }
 .m-val { font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 700; color: #F1F5F9; }
+
+/* Every st.markdown() call gets its own content-height wrapper div from
+   Streamlit (.stElementContainer). A sticky element's containing block is
+   that immediate parent, so .t-nav/.m-strip's own `position: sticky` was
+   boxed into a ~64px-tall wrapper — no room to actually stay pinned, so
+   despite the styling they scrolled away like ordinary content. Making the
+   wrapper itself sticky gives the correct (page-tall) containing block. */
+.stElementContainer:has(> .stMarkdown .t-nav) {
+    position: sticky !important; top: 0 !important; z-index: 1000 !important;
+}
+.stElementContainer:has(> .stMarkdown .m-strip) {
+    position: sticky !important; top: 56px !important; z-index: 999 !important;
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    MARKET BIAS — new tab
@@ -688,13 +708,50 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 @media (max-width: 768px) {
     .block-container { padding: 0 0.75rem 3rem !important; }
     .signal-grid { grid-template-columns: 1fr !important; }
-    .kpi-row { grid-template-columns: repeat(2, 1fr) !important; }
+    /* The mobile sticky strip below already summarizes these five numbers;
+       showing the full desktop card grid too just doubles the scroll. */
+    .kpi-row { display: none !important; }
     .m-strip { display: flex !important; }
     .t-nav { padding: 0 0.75rem; margin: 0 -0.75rem 1.5rem; }
     .t-nav-brand { font-size: 12px; }
     .card-ticker { font-size: 18px; }
     .kpi-value { font-size: 22px; }
     div[data-testid="stTabs"] button[role="tab"] { padding: 10px 14px !important; font-size: 11px !important; }
+
+    /* iOS Safari zooms the whole viewport when focusing an input whose
+       font-size is under 16px — every filter/select tap was triggering it. */
+    .stTextInput input, .stNumberInput input,
+    div[data-baseweb="select"] * { font-size: 16px !important; }
+
+    /* These uppercase labels read fine on a monitor at 9-11px but are too
+       small at arm's length on a phone; loosen the letter-spacing too since
+       it only worsens legibility at small sizes. */
+    .kpi-sub, .lb-stat-lbl, .row-card-stat-lbl, .m-lbl,
+    .price-lbl, .compare-title, .bias-title {
+        font-size: 11px !important;
+        letter-spacing: 0.6px !important;
+    }
+
+    /* Native checkbox hit area is too small to tap reliably on a phone. */
+    input[type="checkbox"] { width: 20px !important; height: 20px !important; }
+
+    /* Tab bar: scroll-snap gives it a native swipe feel, and the edge fades
+       hint that there are more tabs offscreen (9 tabs don't fit on a phone). */
+    div[data-testid="stTabs"] { position: relative; }
+    div[data-testid="stTabs"] [role="tablist"] { scroll-snap-type: x proximity; }
+    div[data-testid="stTabs"] button[role="tab"] { scroll-snap-align: start; }
+    div[data-testid="stTabs"]::before,
+    div[data-testid="stTabs"]::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        height: 44px;
+        width: 20px;
+        pointer-events: none;
+        z-index: 1;
+    }
+    div[data-testid="stTabs"]::before { left: 0; background: linear-gradient(90deg, #090D16, transparent); }
+    div[data-testid="stTabs"]::after { right: 0; background: linear-gradient(270deg, #090D16, transparent); }
 }
 /* Streamlit's native st.columns() don't reflow on their own — without this,
    filter rows / gauges / podium / nav controls squeeze into unreadably thin
@@ -1633,11 +1690,13 @@ if st.session_state.auto_refresh:
 # ══════════════════════════════════════════════════════════════════════════════
 pnl_col = "#10B981" if avg_pnl >= 0 else "#EF4444"
 pnl_str = f"{'+'if avg_pnl>=0 else ''}{avg_pnl}%"
+_m_div_col = "#EF4444" if conflict_cnt else "#64748B"
 md(f"""
 <div class="m-strip">
     <div class="m-metric"><div class="m-lbl">ACTIVE</div><div class="m-val">{active_cnt}</div></div>
+    <div class="m-metric"><div class="m-lbl">CONF</div><div class="m-val">{conf_cnt}</div></div>
+    <div class="m-metric"><div class="m-lbl">DIV</div><div class="m-val" style="color:{_m_div_col};">{conflict_cnt}</div></div>
     <div class="m-metric"><div class="m-lbl">WIN RATE</div><div class="m-val">{win_rate}%</div></div>
-    <div class="m-metric"><div class="m-lbl">TOTAL</div><div class="m-val">{total_cnt:,}</div></div>
     <div class="m-metric"><div class="m-lbl">AVG PNL</div>
         <div class="m-val" style="color:{pnl_col};">{pnl_str}</div></div>
 </div>
@@ -2317,7 +2376,7 @@ with t_anal:
                                        f'title="{c["n"]} signals">{c["wr"]}%</td>')
                 rows_html += f"<tr>{cells_html}</tr>"
             header_html = "<th></th>" + "".join(f"<th>{tk}</th>" for tk in tickers)
-            md(f'<table class="heatmap-table"><tr>{header_html}</tr>{rows_html}</table>')
+            md(f'<div class="table-scroll"><table class="heatmap-table"><tr>{header_html}</tr>{rows_html}</table></div>')
             st.caption("Cell = win rate for that channel on that asset (min. 3 closed signals). Hover a cell for sample size.")
 
     # ── CONSENSUS & EXPECTANCY ────────────────────────────────────────────
