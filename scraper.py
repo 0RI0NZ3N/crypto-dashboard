@@ -16,6 +16,8 @@ import psycopg2
 from psycopg2 import pool as pg_pool
 from dotenv import load_dotenv
 
+import blofin_trader
+
 # ─────────────────────────────────────────
 # STRUCTURED LOGGING
 # Render captures stdout, so a StreamHandler there is enough to make logs
@@ -146,6 +148,89 @@ def maybe_alert_consensus(ticker: str, trade_type: str, room_count: int, rooms: 
         )
         send_telegram_alert(text)
         _alert_state[key] = {"count": room_count, "last_alert": now}
+
+
+# ─────────────────────────────────────────
+# AUTO-TRADE EXECUTION (BloFin)
+# Fires automatically off the same consensus computation that already
+# drives the Telegram alert above — but unlike that alert's in-memory
+# _alert_state dedup (fine for a duplicate notification), this uses the
+# durable blofin_trades table so a process restart can never cause the
+# same signal to be traded twice.
+# ─────────────────────────────────────────
+
+def maybe_execute_trade(cur, ticker: str, trade_type: str, stop_loss: float,
+                         take_profit, room_count: int, rooms: str):
+    try:
+        settings = blofin_trader.get_bot_settings(cur)
+    except Exception as e:
+        logger.debug(f"bot_settings read failed (table may not exist yet): {e}")
+        return
+    if not settings.get("auto_trade_enabled"):
+        return
+    if room_count < settings.get("min_consensus_rooms", 2):
+        return
+    if blofin_trader.has_recent_trade(cur, ticker, trade_type, hours=24):
+        return
+
+    client = blofin_trader.get_trade_client()
+    if client is None:
+        logger.warning("Auto-trading is enabled but BLOFIN_API_KEY/SECRET/PASSPHRASE aren't configured — skipping.")
+        return
+
+    room_names = [r.strip() for r in str(rooms).split(" + ") if r.strip()]
+
+    # Confidence proxy: average historical win rate of the contributing
+    # channels. Unproven/losing channels get smaller size, not a full skip.
+    confidence = 50.0
+    if room_names:
+        cur.execute("""
+            SELECT AVG(CASE WHEN result = 'Hit TP' THEN 100.0 ELSE 0.0 END)
+            FROM closed_signals WHERE group_name = ANY(%s)
+        """, (room_names,))
+        row = cur.fetchone()
+        if row and row[0] is not None:
+            confidence = float(row[0])
+
+    # Leverage: honor what the contributing channels stated, capped at the
+    # user's configured ceiling — channels routinely suggest reckless
+    # leverage (50x-100x) and that ceiling is the safety rail against it.
+    cur.execute("""
+        SELECT raw_message FROM active_signals
+        WHERE ticker = %s AND trade_type = %s AND group_name != 'CONSENSUS'
+          AND created_at >= NOW() - INTERVAL '24 hours'
+    """, (ticker, trade_type))
+    stated_levs = [blofin_trader.extract_leverage(r[0], None) for r in cur.fetchall()]
+    stated_levs = [l for l in stated_levs if l]
+    leverage = max(stated_levs) if stated_levs else settings.get("default_leverage", 10)
+    leverage = min(leverage, settings.get("leverage_cap", 20))
+
+    balance = blofin_trader.get_balance_usdt(client)
+    if balance is None:
+        logger.warning(f"Could not fetch BloFin balance — skipping auto-trade for {ticker} {trade_type}.")
+        return
+
+    margin_usdt = blofin_trader.compute_margin(balance, confidence, settings)
+    if margin_usdt < 5:
+        logger.info(f"Computed margin ${margin_usdt:.2f} too small — skipping auto-trade for {ticker} {trade_type}.")
+        return
+
+    result = blofin_trader.place_consensus_trade(
+        client, cur,
+        ticker=ticker, trade_type=trade_type, stop_loss=stop_loss, take_profit=take_profit,
+        room_count=room_count, confidence=confidence, margin_usdt=margin_usdt, leverage=leverage,
+    )
+
+    if result["status"] == "FILLED":
+        send_telegram_alert(
+            f"🤖 <b>AUTO-TRADE EXECUTED — {ticker} {trade_type}</b>\n"
+            f"Margin: ${margin_usdt:.2f} @ {leverage}x | Confidence: {confidence:.0f}%\n"
+            f"Channels ({room_count}): {rooms}\n"
+            f"SL: {stop_loss:.4f}" + (f" | TP: {take_profit:.4f}" if take_profit else "")
+        )
+    elif result["status"] == "DRY_RUN":
+        logger.info(f"[DRY RUN] Auto-trade simulated for {ticker} {trade_type} — see blofin_trades log.")
+
 
 # ─────────────────────────────────────────
 # HEALTH-CHECK HTTP SERVER (Render free tier)
@@ -561,10 +646,60 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_closed_closed_at  ON closed_signals (closed_at);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_closed_group      ON closed_signals (group_name);")
 
+        # ── bot_settings ─────────────────────────────────────────────
+        # Single-row config table for the BloFin auto-trader. Lives in
+        # Postgres (not an env var or session_state) because the two
+        # processes that need it — this scraper's background thread and
+        # the Streamlit dashboard's settings form — run separately, and
+        # this is the store they already share.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                id                  INT PRIMARY KEY DEFAULT 1,
+                auto_trade_enabled  BOOLEAN DEFAULT FALSE,
+                margin_mode         VARCHAR(10) DEFAULT 'percent',
+                margin_percent      DOUBLE PRECISION DEFAULT 0.15,
+                margin_cap_usdt     DOUBLE PRECISION DEFAULT 100,
+                margin_fixed_usdt   DOUBLE PRECISION DEFAULT 50,
+                leverage_cap        INT DEFAULT 20,
+                default_leverage    INT DEFAULT 10,
+                min_consensus_rooms INT DEFAULT 2,
+                updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (id = 1)
+            );
+        """)
+        cur.execute("INSERT INTO bot_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;")
+
+        # ── blofin_trades ────────────────────────────────────────────
+        # Durable audit log of every auto-trade attempt. Also doubles as
+        # the dedup mechanism: without a DB-backed record of what's
+        # already been traded, a process restart would forget which
+        # consensus signals it already acted on and could re-fire the
+        # same trade (in-memory dedup, like _alert_state, is fine for a
+        # duplicate notification but not for a duplicate live order).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS blofin_trades (
+                id           SERIAL PRIMARY KEY,
+                ticker       VARCHAR(50),
+                trade_type   VARCHAR(10),
+                room_count   INT,
+                confidence   DOUBLE PRECISION,
+                margin_usdt  DOUBLE PRECISION,
+                leverage     INT,
+                order_id     VARCHAR(100),
+                entry_price  DOUBLE PRECISION,
+                stop_loss    DOUBLE PRECISION,
+                take_profit  DOUBLE PRECISION,
+                status       VARCHAR(20),
+                error        TEXT,
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_blofin_trades_ticker ON blofin_trades (ticker, trade_type, created_at);")
+
         conn.commit()
         cur.close()
         release_conn(conn)
-        logger.info("DB tables verified / migrated (active_signals + closed_signals).")
+        logger.info("DB tables verified / migrated (active_signals + closed_signals + bot_settings + blofin_trades).")
     except Exception as e:
         logger.error(f"DB init error: {e}")
 
@@ -672,6 +807,7 @@ def run_consolidation():
                       raw))
 
                 maybe_alert_consensus(ticker, trade_type, cnt, rooms, avg_emin, avg_emax, avg_sl)
+                maybe_execute_trade(cur, ticker, trade_type, avg_sl, avg_tp, cnt, rooms)
 
             conn.commit()
             cur.close()

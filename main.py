@@ -15,6 +15,8 @@ import warnings
 from dotenv import load_dotenv
 from streamlit_autorefresh import st_autorefresh
 
+import blofin_trader
+
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Signal Intelligence Terminal",
@@ -774,6 +776,31 @@ def load_db() -> tuple:
             CREATE INDEX IF NOT EXISTS idx_active_signals_created_at ON active_signals (created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_active_signals_ticker_type ON active_signals (ticker, trade_type);
             CREATE INDEX IF NOT EXISTS idx_closed_signals_closed_at ON closed_signals (closed_at DESC);
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                id INT PRIMARY KEY DEFAULT 1,
+                auto_trade_enabled BOOLEAN DEFAULT FALSE,
+                margin_mode VARCHAR(10) DEFAULT 'percent',
+                margin_percent DOUBLE PRECISION DEFAULT 0.15,
+                margin_cap_usdt DOUBLE PRECISION DEFAULT 100,
+                margin_fixed_usdt DOUBLE PRECISION DEFAULT 50,
+                leverage_cap INT DEFAULT 20,
+                default_leverage INT DEFAULT 10,
+                min_consensus_rooms INT DEFAULT 2,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (id = 1)
+            );
+            INSERT INTO bot_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+            CREATE TABLE IF NOT EXISTS blofin_trades (
+                id SERIAL PRIMARY KEY,
+                ticker VARCHAR(50), trade_type VARCHAR(10),
+                room_count INT, confidence DOUBLE PRECISION,
+                margin_usdt DOUBLE PRECISION, leverage INT,
+                order_id VARCHAR(100), entry_price DOUBLE PRECISION,
+                stop_loss DOUBLE PRECISION, take_profit DOUBLE PRECISION,
+                status VARCHAR(20), error TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_blofin_trades_ticker ON blofin_trades (ticker, trade_type, created_at);
         """)
         conn.commit(); cur.close()
         # Table grows forever (history sync goes back to Jan 2026 and never trims), so
@@ -788,6 +815,101 @@ def load_db() -> tuple:
         return df_a, df_cl
     except Exception:
         return None, None
+
+
+def _db_connection():
+    host, port, user = _secret("DB_HOST"), _secret("DB_PORT"), _secret("DB_USER")
+    pw, db = _secret("DB_PASSWORD"), _secret("DB_NAME")
+    if not all([host, port, user, db]):
+        return None
+    return psycopg2.connect(host=host, port=int(port), user=user,
+                             password=pw, database=db, connect_timeout=4)
+
+
+BOT_SETTINGS_DEFAULTS = {
+    "auto_trade_enabled": False, "margin_mode": "percent", "margin_percent": 0.15,
+    "margin_cap_usdt": 100.0, "margin_fixed_usdt": 50.0, "leverage_cap": 20,
+    "default_leverage": 10, "min_consensus_rooms": 2,
+}
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_bot_settings() -> dict:
+    conn = _db_connection()
+    if conn is None:
+        return dict(BOT_SETTINGS_DEFAULTS)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT auto_trade_enabled, margin_mode, margin_percent, margin_cap_usdt,
+                   margin_fixed_usdt, leverage_cap, default_leverage, min_consensus_rooms
+            FROM bot_settings WHERE id = 1
+        """)
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return dict(BOT_SETTINGS_DEFAULTS)
+        return {
+            "auto_trade_enabled": row[0], "margin_mode": row[1], "margin_percent": row[2],
+            "margin_cap_usdt": row[3], "margin_fixed_usdt": row[4], "leverage_cap": row[5],
+            "default_leverage": row[6], "min_consensus_rooms": row[7],
+        }
+    except Exception:
+        return dict(BOT_SETTINGS_DEFAULTS)
+
+
+def save_bot_settings(new_settings: dict) -> bool:
+    conn = _db_connection()
+    if conn is None:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE bot_settings SET
+                auto_trade_enabled = %s, margin_mode = %s, margin_percent = %s,
+                margin_cap_usdt = %s, margin_fixed_usdt = %s, leverage_cap = %s,
+                default_leverage = %s, min_consensus_rooms = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+        """, (new_settings["auto_trade_enabled"], new_settings["margin_mode"],
+              new_settings["margin_percent"], new_settings["margin_cap_usdt"],
+              new_settings["margin_fixed_usdt"], new_settings["leverage_cap"],
+              new_settings["default_leverage"], new_settings["min_consensus_rooms"]))
+        conn.commit(); cur.close(); conn.close()
+        load_bot_settings.clear()
+        return True
+    except Exception as e:
+        st.error(f"Failed to save auto-trading settings: {e}")
+        return False
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_blofin_trades(limit=50) -> pd.DataFrame:
+    conn = _db_connection()
+    if conn is None:
+        return pd.DataFrame()
+    try:
+        df = pd.read_sql(
+            f"SELECT * FROM blofin_trades ORDER BY created_at DESC LIMIT {limit}", conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_blofin_account():
+    """Live balance + open positions from BloFin. Cached to the same 30s
+    cadence as the rest of the dashboard so it doesn't hammer the exchange
+    API on every autorefresh tick."""
+    client = blofin_trader.get_trade_client()
+    if client is None:
+        return None, None
+    balance = blofin_trader.get_balance_usdt(client)
+    try:
+        positions = client.fetch_positions()
+    except Exception:
+        positions = []
+    return balance, positions
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1528,6 +1650,7 @@ md(f"""
 _div_tab = f"DIVERGENCE ({conflict_cnt})" if conflict_cnt else "DIVERGENCE"
 tabs = st.tabs([
     "LIVE SIGNALS",
+    "ACCOUNT",
     "ANALYTICS",
     "CHANNEL INDEX",
     "SIGNAL EXPLORER",
@@ -1536,7 +1659,7 @@ tabs = st.tabs([
     "SYSTEM LOGS",
     _div_tab,
 ])
-t_term, t_anal, t_chan, t_exp, t_bias, t_ai, t_sys, t_div = tabs
+t_term, t_acct, t_anal, t_chan, t_exp, t_bias, t_ai, t_sys, t_div = tabs
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1842,6 +1965,200 @@ with t_term:
   <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#334155;margin-bottom:6px;font-weight:700;">TOTAL INGESTED</div>
   <div style="font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:700;color:#E2E8F0;">{total_cnt:,}</div>
   <div style="font-size:11px;color:#1E3A5F;margin-top:6px;">signals parsed all-time</div>
+</div>
+""")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAB — ACCOUNT (BLOFIN)
+# ════════════════════════════════════════════════════════════════════════════
+with t_acct:
+    st.markdown(
+        '<div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;'
+        'color:#334155;font-weight:700;margin-bottom:4px;">BLOFIN ACCOUNT &amp; AUTO-TRADING</div>',
+        unsafe_allow_html=True,
+    )
+
+    blofin_configured = blofin_trader.get_trade_client() is not None
+    dry_run  = blofin_trader.is_dry_run()
+    sandbox  = blofin_trader.is_sandbox()
+
+    if dry_run:
+        env_badge = '<span class="t-nav-status demo">DRY RUN — NO REAL ORDERS SENT</span>'
+    elif sandbox:
+        env_badge = '<span class="t-nav-status demo">SANDBOX — DEMO FUNDS</span>'
+    else:
+        env_badge = '<span class="t-nav-status live">LIVE — REAL FUNDS</span>'
+    md(f'<div style="margin-bottom:16px;">{env_badge}</div>')
+
+    if not blofin_configured:
+        md("""
+<div class="glass-panel">
+  <div style="font-size:13px;color:#475569;line-height:1.8;">
+    No BloFin API credentials configured yet. Add
+    <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">BLOFIN_API_KEY</code>,
+    <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">BLOFIN_API_SECRET</code>
+    and <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">BLOFIN_API_PASSPHRASE</code>
+    to your <code style="background:#0F1523;padding:2px 6px;border-radius:4px;color:#38BDF8;">.env</code>
+    (create the key at blofin.com &rarr; Assets &rarr; API Management, with <b>Trade</b> and <b>Read</b>
+    permissions — leave <b>Transfer</b> off — and, if offered, restrict it to your server's IP).
+  </div>
+</div>
+""")
+    else:
+        balance, positions = load_blofin_account()
+
+        ac1, ac2, ac3 = st.columns(3)
+        with ac1:
+            bal_str = f"${balance:,.2f}" if balance is not None else "—"
+            md(f"""
+<div class="kpi-card kpi-accent-blue">
+  <div class="kpi-label">Futures Balance</div>
+  <div class="kpi-value" style="color:#38BDF8;">{bal_str}</div>
+  <div class="kpi-sub">USDT, live from BloFin</div>
+</div>
+""")
+        with ac2:
+            md(f"""
+<div class="kpi-card">
+  <div class="kpi-label">Open Positions</div>
+  <div class="kpi-value">{len(positions) if positions else 0}</div>
+  <div class="kpi-sub">Currently held on BloFin</div>
+</div>
+""")
+        with ac3:
+            settings_preview = load_bot_settings()
+            auto_on = settings_preview.get("auto_trade_enabled", False)
+            md(f"""
+<div class="kpi-card kpi-accent-{'green' if auto_on else 'red'}">
+  <div class="kpi-label">Auto-Trading</div>
+  <div class="kpi-value" style="color:{'#10B981' if auto_on else '#EF4444'};">{'ON' if auto_on else 'OFF'}</div>
+  <div class="kpi-sub">Checked every consolidation cycle (60s)</div>
+</div>
+""")
+
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+        st.markdown("**Open Positions**")
+        if not positions:
+            st.info("No open positions on BloFin right now.")
+        else:
+            for p in positions:
+                contracts = p.get("contracts") or 0
+                if not contracts:
+                    continue
+                side       = (p.get("side") or "").upper()
+                dir_cls    = "dir-long" if side == "LONG" else "dir-short"
+                upnl       = p.get("unrealizedPnl")
+                upnl_color = "#10B981" if (upnl or 0) >= 0 else "#EF4444"
+                md(f"""
+<div class="row-card {'row-long' if side == 'LONG' else 'row-short'}">
+  <div class="row-card-main">
+    <span class="row-card-chan">{p.get('symbol','—')}</span>
+    <span class="dir-pill {dir_cls}">{side}</span>
+  </div>
+  <div class="row-card-meta">
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Contracts</div>
+      <div class="row-card-stat-val">{contracts}</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Entry Price</div>
+      <div class="row-card-stat-val">{p.get('entryPrice','—')}</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Leverage</div>
+      <div class="row-card-stat-val">{p.get('leverage','—')}x</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Unrealized PnL</div>
+      <div class="row-card-stat-val" style="color:{upnl_color};">{upnl if upnl is not None else '—'}</div></div>
+  </div>
+</div>
+""")
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("**Auto-Trading Settings**")
+    st.caption(
+        "Applies to new multi-channel consensus signals only. Checked by the scraper's "
+        "consolidation loop every 60 seconds — changes here take effect on its next cycle, "
+        "not instantly."
+    )
+
+    s = load_bot_settings()
+    with st.form("auto_trade_settings"):
+        enabled = st.checkbox("Enable auto-trading", value=s.get("auto_trade_enabled", False))
+
+        mode_options = ["percent", "fixed"]
+        mode_labels  = {"percent": "% of account balance (capped)", "fixed": "Fixed USDT amount"}
+        margin_mode = st.radio(
+            "Position sizing", mode_options,
+            index=mode_options.index(s.get("margin_mode", "percent")),
+            format_func=lambda m: mode_labels[m], horizontal=True,
+        )
+
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            margin_percent = st.number_input(
+                "Margin % of balance", min_value=1.0, max_value=100.0,
+                value=float(s.get("margin_percent", 0.15)) * 100, step=1.0,
+            ) / 100
+        with fc2:
+            margin_cap = st.number_input(
+                "Margin cap (USDT)", min_value=5.0,
+                value=float(s.get("margin_cap_usdt", 100.0)), step=5.0,
+            )
+        with fc3:
+            margin_fixed = st.number_input(
+                "Fixed margin (USDT)", min_value=5.0,
+                value=float(s.get("margin_fixed_usdt", 50.0)), step=5.0,
+            )
+
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            leverage_cap = st.number_input(
+                "Leverage cap", min_value=1, max_value=125,
+                value=int(s.get("leverage_cap", 20)), step=1,
+                help="Contributing channels' stated leverage is used but never exceeds this.",
+            )
+        with lc2:
+            min_rooms = st.number_input(
+                "Min. channels for consensus trade", min_value=2, max_value=10,
+                value=int(s.get("min_consensus_rooms", 2)), step=1,
+            )
+
+        if st.form_submit_button("Save settings", use_container_width=True):
+            ok = save_bot_settings({
+                "auto_trade_enabled": enabled, "margin_mode": margin_mode,
+                "margin_percent": margin_percent, "margin_cap_usdt": margin_cap,
+                "margin_fixed_usdt": margin_fixed, "leverage_cap": leverage_cap,
+                "min_consensus_rooms": min_rooms, "default_leverage": s.get("default_leverage", 10),
+            })
+            if ok:
+                st.success("Saved. Takes effect on the scraper's next consolidation cycle.")
+                st.rerun()
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("**Recent Auto-Trade Log**")
+    trades = load_blofin_trades()
+    if trades.empty:
+        st.info("No auto-trades attempted yet.")
+    else:
+        status_colors = {"FILLED": "#10B981", "DRY_RUN": "#F59E0B", "FAILED": "#EF4444"}
+        for _, r in trades.iterrows():
+            sc = status_colors.get(r["status"], "#64748B")
+            ts = pd.to_datetime(r["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+            err_line = f'<div class="row-card-msg">{r["error"]}</div>' if r.get("error") else ""
+            md(f"""
+<div class="row-card {'row-long' if r['trade_type'] == 'LONG' else 'row-short'}">
+  <div class="row-card-main">
+    <span class="row-card-chan">{r['ticker']}</span>
+    <span class="dir-pill {'dir-long' if r['trade_type']=='LONG' else 'dir-short'}">{r['trade_type']}</span>
+    <span class="conf-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}55;">{r['status']}</span>
+  </div>
+  <div class="row-card-meta">
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Margin</div>
+      <div class="row-card-stat-val">${r['margin_usdt']:.2f}</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Leverage</div>
+      <div class="row-card-stat-val">{r['leverage']}x</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Confidence</div>
+      <div class="row-card-stat-val">{r['confidence']:.0f}%</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Time</div>
+      <div class="row-card-stat-val" style="font-size:11px;">{ts}</div></div>
+  </div>
+  {err_line}
 </div>
 """)
 
