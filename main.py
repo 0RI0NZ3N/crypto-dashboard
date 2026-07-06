@@ -6,7 +6,6 @@ Cyberpunk Bloomberg Terminal Dark Mode
 import streamlit as st
 import psycopg2
 import pandas as pd
-import numpy as np
 import os
 import datetime
 import re
@@ -55,7 +54,7 @@ html, body, .stApp {
     font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
 }
 .block-container {
-    padding: 0 2rem 3rem !important;
+    padding: 1.5rem 2rem 3rem !important;
     max-width: 1440px !important;
 }
 
@@ -120,43 +119,8 @@ div[data-testid="stDownloadButton"] > button:hover {
 .streamlit-expanderContent { background: #090D16 !important; border: 1px solid #2D3F55 !important; border-top: none !important; }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   TOP NAV BAR
+   STATUS PILLS — reused by the Account tab's BloFin dry-run/sandbox/live badge
 ══════════════════════════════════════════════════════════════════════════ */
-.t-nav {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    background: rgba(9, 13, 22, 0.97);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid #2D3F55;
-    padding: 0 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    min-height: 56px;
-    margin: 0 -2rem 1.5rem;
-}
-.t-nav-brand {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
-    font-weight: 700;
-    color: #38BDF8;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.t-nav-brand::before {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10B981;
-    box-shadow: 0 0 10px #10B981;
-}
 .t-nav-status {
     font-size: 11px;
     font-weight: 700;
@@ -625,9 +589,7 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 .m-strip {
     display: none;
     position: sticky;
-    /* Sits directly under .t-nav (also sticky, top:0, 56px tall) — top:0
-       here would make the two overlap/fight for the same spot on scroll. */
-    top: 56px; z-index: 999;
+    top: 0; z-index: 999;
     background: rgba(8,12,22,0.97);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid #1E2A3A;
@@ -643,15 +605,12 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 
 /* Every st.markdown() call gets its own content-height wrapper div from
    Streamlit (.stElementContainer). A sticky element's containing block is
-   that immediate parent, so .t-nav/.m-strip's own `position: sticky` was
-   boxed into a ~64px-tall wrapper — no room to actually stay pinned, so
-   despite the styling they scrolled away like ordinary content. Making the
+   that immediate parent, so .m-strip's own `position: sticky` was boxed
+   into a tiny content-sized wrapper — no room to actually stay pinned, so
+   despite the styling it scrolled away like ordinary content. Making the
    wrapper itself sticky gives the correct (page-tall) containing block. */
-.stElementContainer:has(> .stMarkdown .t-nav) {
-    position: sticky !important; top: 0 !important; z-index: 1000 !important;
-}
 .stElementContainer:has(> .stMarkdown .m-strip) {
-    position: sticky !important; top: 56px !important; z-index: 999 !important;
+    position: sticky !important; top: 0 !important; z-index: 999 !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -706,14 +665,12 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
    RESPONSIVE — Mobile
 ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-    .block-container { padding: 0 0.75rem 3rem !important; }
+    .block-container { padding: 1rem 0.75rem 3rem !important; }
     .signal-grid { grid-template-columns: 1fr !important; }
     /* The mobile sticky strip below already summarizes these five numbers;
        showing the full desktop card grid too just doubles the scroll. */
     .kpi-row { display: none !important; }
     .m-strip { display: flex !important; }
-    .t-nav { padding: 0 0.75rem; margin: 0 -0.75rem 1.5rem; }
-    .t-nav-brand { font-size: 12px; }
     .card-ticker { font-size: 18px; }
     .kpi-value { font-size: 22px; }
     div[data-testid="stTabs"] button[role="tab"] { padding: 10px 14px !important; font-size: 11px !important; }
@@ -970,86 +927,6 @@ def load_blofin_account():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SYNTHETIC DEMO DATA
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _demo():
-    np.random.seed(42)
-    groups = ["Apex VIP Signals","Bullseye Futures","Whale Intel Pro","Scalping Command"]
-    coins  = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","LINKUSDT","AVAXUSDT"]
-    REFS   = {
-        "BTCUSDT":{"p":65000,"s":600},"ETHUSDT":{"p":3450,"s":90},
-        "SOLUSDT":{"p":145,"s":6},"XRPUSDT":{"p":0.54,"s":0.03},
-        "ADAUSDT":{"p":0.40,"s":0.02},"LINKUSDT":{"p":8.5,"s":0.5},
-        "AVAXUSDT":{"p":30,"s":2},
-    }
-    rows = []
-    base = datetime.datetime.now() - datetime.timedelta(days=45)
-    # Give channels distinct underlying skill levels so per-channel /
-    # per-channel-per-coin analytics have something real to show.
-    channel_skill = {"Apex VIP Signals": 0.78, "Bullseye Futures": 0.52,
-                      "Whale Intel Pro": 0.68, "Scalping Command": 0.45}
-    for i in range(220):
-        g = np.random.choice(groups); c = np.random.choice(coins)
-        t = np.random.choice(["LONG","SHORT"], p=[0.60,0.40])
-        ref = REFS[c]; e = round(ref["p"] + np.random.uniform(-ref["s"],ref["s"]),4)
-        win_p = channel_skill[g]
-        win = np.random.choice([True,False], p=[win_p,1-win_p])
-        pnl = round(np.random.uniform(3,11) if win else np.random.uniform(-5,-2), 2)
-        src = np.random.choice(["STRUCTURED","OPINION"], p=[0.72,0.28])
-        lev = np.random.choice([10,20,50,100], p=[0.4,0.4,0.15,0.05])
-        created = base + datetime.timedelta(days=np.random.uniform(0,43),
-                                             hours=np.random.uniform(0,24))
-        # Simulate signal latency: most signals post close to entry, some
-        # channels post noticeably after the move already happened.
-        latency_bias = 0.003 if g != "Scalping Command" else 0.018
-        price_at_post = round(e * (1 + np.random.uniform(-latency_bias, latency_bias)), 4)
-        # MAE = how much it drew down against the position before resolving;
-        # MFE = the best excursion in favor (>= final pnl for winners).
-        mae_pct = round(np.random.uniform(0.3, 3.5), 2)
-        mfe_pct = round(pnl + np.random.uniform(0, 2.5), 2) if win else round(np.random.uniform(0.2, 2.0), 2)
-        rows.append({
-            "id":i,"group_name":g,"ticker":c,"trade_type":t,
-            "entry_min":e,"entry_max":round(e*1.005,4),
-            "stop_loss":round(e*(0.97 if t=="LONG" else 1.03),4),
-            "source_type":src,
-            "raw_message":f"[DEMO] {g} {t} {c} entry {e} (Leverage: Cross {lev}x)",
-            "created_at":created,
-            "result":"Hit TP" if win else "Hit SL","pnl":pnl,
-            "price_at_post": price_at_post, "mae_pct": mae_pct, "mfe_pct": mfe_pct,
-        })
-    df_h = pd.DataFrame(rows).sort_values("created_at", ascending=False)
-    acts = [
-        {"id":201,"group_name":"Apex VIP Signals","ticker":"BTCUSDT","trade_type":"LONG",
-         "entry_min":64800.0,"entry_max":65100.0,"stop_loss":62200.0,
-         "source_type":"STRUCTURED","raw_message":"BUY BTC 64800-65100 SL 62200 (Cross 50x)",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=1.5)},
-        {"id":202,"group_name":"Whale Intel Pro","ticker":"BTCUSDT","trade_type":"LONG",
-         "entry_min":64600.0,"entry_max":65000.0,"stop_loss":62000.0,
-         "source_type":"STRUCTURED","raw_message":"LONG BTC 64600 TP 68000 SL 62000 (20x)",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=2)},
-        {"id":203,"group_name":"Bullseye Futures","ticker":"BTCUSDT","trade_type":"LONG",
-         "entry_min":64900.0,"entry_max":65200.0,"stop_loss":62500.0,
-         "source_type":"OPINION","raw_message":"[OPINION DIGESTED] BTC strong support, breakout imminent",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=3)},
-        {"id":204,"group_name":"Scalping Command","ticker":"ETHUSDT","trade_type":"SHORT",
-         "entry_min":3440.0,"entry_max":3460.0,"stop_loss":3530.0,
-         "source_type":"STRUCTURED","raw_message":"SHORT ETH 3440-3460 SL 3530 (Cross 100x)",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=0.5)},
-        {"id":205,"group_name":"Apex VIP Signals","ticker":"SOLUSDT","trade_type":"LONG",
-         "entry_min":143.5,"entry_max":145.0,"stop_loss":137.0,
-         "source_type":"STRUCTURED","raw_message":"SOL LONG 143.5 SL 137 (10x)",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=4)},
-        {"id":206,"group_name":"Whale Intel Pro","ticker":"ETHUSDT","trade_type":"LONG",
-         "entry_min":3420.0,"entry_max":3450.0,"stop_loss":3280.0,
-         "source_type":"OPINION","raw_message":"[OPINION DIGESTED] ETH holding key level, bullish bias",
-         "created_at":datetime.datetime.now()-datetime.timedelta(hours=5)},
-    ]
-    df_a = pd.DataFrame(acts).sort_values("created_at", ascending=False)
-    return df_a, df_h
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # DATA PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1096,7 +973,17 @@ if IS_LIVE:
             "result","pnl","created_at","raw_message","source_type",
         ])
 else:
-    df_active, df_hist = _demo()
+    # DB unreachable — render the shell with empty data rather than fake
+    # rows; the "Database Offline" banner below explains why everything
+    # reads zero, so it doesn't get mistaken for "no signals yet."
+    df_active = pd.DataFrame(columns=[
+        "id","group_name","ticker","trade_type","entry_min","entry_max",
+        "stop_loss","source_type","raw_message","created_at",
+    ])
+    df_hist = pd.DataFrame(columns=[
+        "group_name","ticker","trade_type","entry_min","entry_max","stop_loss",
+        "result","pnl","created_at","raw_message","source_type",
+    ])
 
 df_active["leverage"] = df_active["raw_message"].apply(_extract_lev)
 df_hist["leverage"]   = df_hist["raw_message"].apply(_extract_lev) if not df_hist.empty else None
@@ -1652,19 +1539,16 @@ if "conflict_resolutions" not in st.session_state:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TOP NAV BAR
+# CONNECTION STATUS
 # ══════════════════════════════════════════════════════════════════════════════
 
-nav_status = (
-    '<span class="t-nav-status live">LIVE DATABASE</span>' if IS_LIVE
-    else '<span class="t-nav-status demo">DEMO MODE</span>'
-)
-md(f"""
-<div class="t-nav">
-    <div class="t-nav-brand">SIG&nbsp;&nbsp;INTELLIGENCE&nbsp;&nbsp;TERMINAL</div>
-    <div>{nav_status}</div>
-</div>
-""")
+if not IS_LIVE:
+    st.error(
+        "**Database offline** — DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME "
+        "aren't reachable, so every figure below is empty, not real. Set those in "
+        "this app's Secrets and reload.",
+        icon="⚠️",
+    )
 
 if "auto_refresh" not in st.session_state:
     st.session_state.auto_refresh = True
