@@ -1049,6 +1049,7 @@ def _svg_gauge(pct: int, color: str, label: str) -> str:
     )
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def _channel_win_rates(hist_df) -> dict:
     rates = {}
     if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
@@ -1072,6 +1073,7 @@ def _wr(df) -> float:
     return round(len(df[df["result"] == "Hit TP"]) / len(df) * 100, 1)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def channel_skill_decay(hist_df, days=30, min_samples=5) -> list:
     """Lifetime win rate vs a trailing window, per channel — surfaces
     channels that are currently cold even if their all-time record looks good."""
@@ -1097,6 +1099,7 @@ def channel_skill_decay(hist_df, days=30, min_samples=5) -> list:
     return sorted(out, key=lambda r: r["lifetime_wr"], reverse=True)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def channel_coin_matrix(hist_df, min_samples=3):
     """Per-(channel, coin) win rate matrix — a channel's edge is often
     concentrated in one or two assets rather than spread evenly.
@@ -1118,6 +1121,7 @@ def channel_coin_matrix(hist_df, min_samples=3):
     return channels[:8], tickers[:8], cells
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def consensus_vs_solo(hist_df) -> dict:
     """Does multi-channel agreement actually outperform single-channel calls?
     Approximated from the data model we have: closed CONSENSUS rows (2+
@@ -1134,6 +1138,7 @@ def consensus_vs_solo(hist_df) -> dict:
     }
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def channel_expectancy(hist_df, min_samples=5) -> list:
     """Expectancy = (win% x avg win) - (loss% x avg loss). Ranks channels by
     what they actually pay out, not just how often they're right — a 40%
@@ -1160,6 +1165,7 @@ def channel_expectancy(hist_df, min_samples=5) -> list:
     return sorted(out, key=lambda r: r["expectancy"], reverse=True)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def entry_latency_stats(hist_df, tolerance_pct=0.3, min_samples=5) -> list:
     """% of a channel's signals where the stated entry zone was still
     reachable at the moment the signal was posted, using price_at_post.
@@ -1186,6 +1192,7 @@ def entry_latency_stats(hist_df, tolerance_pct=0.3, min_samples=5) -> list:
     return sorted(out, key=lambda r: r["fresh_pct"], reverse=True)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def excursion_stats(hist_df, min_samples=5) -> list:
     """Average drawdown winners survive (MAE) and average favorable move
     losers still got (MFE) before reversing, per channel."""
@@ -1210,6 +1217,7 @@ def excursion_stats(hist_df, min_samples=5) -> list:
     return out
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def divergence_track_record(hist_df, window_hours=24) -> list:
     """Approximate divergence resolution: for each ticker, find same-day
     windows where both LONG and SHORT closed signals occurred, and tally
@@ -1240,6 +1248,7 @@ def divergence_track_record(hist_df, window_hours=24) -> list:
     return sorted(out, key=lambda r: r["n"], reverse=True)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def timing_patterns(hist_df):
     """Win rate by hour-of-day and day-of-week — cheap to compute, sometimes
     reveals that weekend / off-hours signals underperform."""
@@ -1300,6 +1309,7 @@ def compute_confidence(grp_df, hist_df) -> int:
     return min(int(round(score)), 100)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def detect_conflicts(df_active) -> dict:
     """Return tickers with both LONG and SHORT signals in the last 24 h."""
     if df_active is None or df_active.empty:
@@ -1338,6 +1348,25 @@ def _recency_label(ts) -> str:
     if hrs < 24:
         return f"{hrs}h ago"
     return f"{hrs // 24}d ago"
+
+
+def _recency_bucket(ts) -> str:
+    """Coarse recency bucket for the Gemini cache key. _recency_label's exact
+    'Xm ago' string changes every minute, which busts st.cache_data on
+    _gemini_signal_synthesis almost every rerun — this only changes every
+    few hours so the cache (and the API budget) actually holds."""
+    ts = pd.to_datetime(ts)
+    now = pd.Timestamp.now(tz=ts.tz) if getattr(ts, "tz", None) else pd.Timestamp.now()
+    hrs = max((now - ts).total_seconds() / 3600, 0)
+    if hrs < 1:
+        return "<1h"
+    if hrs < 4:
+        return "1-4h"
+    if hrs < 12:
+        return "4-12h"
+    if hrs < 24:
+        return "12-24h"
+    return ">24h"
 
 
 def _conflict_side_html(trade_type, side_df, hist_df) -> str:
@@ -1391,7 +1420,7 @@ def _gemini_client():
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _gemini_signal_synthesis(ticker, direction, n_rooms, room_names, entry_min, entry_max,
-                              stop_loss, source_mix, avg_win_rate, confidence, recency_label):
+                              stop_loss, source_mix, avg_win_rate, confidence, recency_bucket):
     client = _gemini_client()
     if client is None:
         return None
@@ -1409,7 +1438,7 @@ Signal source mix: {source_mix}
 Average historical win rate of these channels: {avg_win_rate}%
 Deterministic confidence score (already computed from channel count, source type,
 recency and win rate — do not recompute or restate this number, just use it as context): {confidence}%
-Most recent signal: {recency_label}
+Most recent signal: {recency_bucket} ago
 
 Return strict JSON with exactly two keys:
 "summary": a 1-2 sentence synthesis of the confluence/divergence picture and what it implies.
@@ -1691,7 +1720,7 @@ with t_term:
                         ai_entry_max  = float(tdf["entry_max"].mean())
                         ai_stop_loss  = float(tdf["stop_loss"].mean())
                         ai_latest     = pd.to_datetime(tdf["created_at"]).max()
-                        ai_recency    = _recency_label(ai_latest) if pd.notna(ai_latest) else "unknown"
+                        ai_recency    = _recency_bucket(ai_latest) if pd.notna(ai_latest) else "unknown"
                         ai_src_counts = (tdf["source_type"].value_counts()
                                          if "source_type" in tdf.columns else pd.Series(dtype=int))
                         ai_source_mix = ", ".join(f"{k}: {v}" for k, v in ai_src_counts.items()) or "STRUCTURED: 1"
@@ -2467,7 +2496,7 @@ with t_ai:
             stop_loss = float(grp_data["stop_loss"].mean())
             confidence = compute_confidence(grp_data, df_hist)
             latest = pd.to_datetime(grp_data["created_at"]).max()
-            recency = _recency_label(latest) if pd.notna(latest) else "unknown"
+            recency = _recency_bucket(latest) if pd.notna(latest) else "unknown"
 
             src_counts = (grp_data["source_type"].value_counts()
                           if "source_type" in grp_data.columns else pd.Series(dtype=int))
