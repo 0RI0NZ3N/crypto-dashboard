@@ -401,6 +401,13 @@ div[data-testid="stTabs"] button[role="tab"]:hover {
     color: #FBBF24; margin-bottom: 10px; padding-bottom: 10px;
     border-bottom: 1px solid rgba(251,191,36,0.22);
 }
+.suggested-banner {
+    font-size: 9px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    color: #818CF8; margin-bottom: 10px; padding-bottom: 10px;
+    border-bottom: 1px solid rgba(129,140,248,0.25);
+}
+.card-suggested { border-color: rgba(129,140,248,0.5) !important; box-shadow: 0 0 0 1px rgba(129,140,248,0.25); }
+.card-suggested::before { background: linear-gradient(180deg, #818CF8, #6366F1) !important; box-shadow: 2px 0 18px rgba(129,140,248,0.5) !important; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    CONFIDENCE BADGE + CONFLICT RESOLVER
@@ -957,10 +964,12 @@ def _conv_bars(n: int, kind: str) -> str:
 def signal_card(ticker, trade_type, rooms_count, room_names,
                 entry_min, entry_max, stop_loss, source_type,
                 is_consensus=False, diverge=False, confidence=None,
-                hide_ticker=False) -> str:
+                hide_ticker=False, suggested=False) -> str:
 
     card_cls = ("card-consensus" if is_consensus else
                 "card-long" if trade_type == "LONG" else "card-short")
+    if suggested:
+        card_cls += " card-suggested"
     dir_cls  = "dir-long" if trade_type == "LONG" else "dir-short"
     dir_lbl  = "LONG" if trade_type == "LONG" else "SHORT"
     bars     = _conv_bars(min(rooms_count, 3),
@@ -975,6 +984,9 @@ def signal_card(ticker, trade_type, rooms_count, room_names,
     else:
         src_tag   = '<span class="tag tag-struct">STRUCTURED</span>'
         banner    = ""
+
+    if suggested:
+        banner = '<div class="suggested-banner">★ YOUR SUGGESTED POSITION — DIVERGENCE RESOLVED</div>' + banner
 
     conf_html = ""
     if confidence is not None:
@@ -1356,6 +1368,72 @@ def _conflict_side_html(trade_type, side_df, hist_df) -> str:
 </div>"""
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GEMINI-POWERED SIGNAL SYNTHESIS
+# The model only narrates the structured data we hand it — the confidence score
+# shown to the user is always our own deterministic compute_confidence() value,
+# never something the LLM invents, so the two can't contradict each other.
+# Defined here (before Tab 1) so the Live Signals drill-down can call it too,
+# not just the AI Research Notebook tab.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_resource(show_spinner=False)
+def _gemini_client():
+    key = _secret("GEMINI_API_KEY")
+    if not key:
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=key)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _gemini_signal_synthesis(ticker, direction, n_rooms, room_names, entry_min, entry_max,
+                              stop_loss, source_mix, avg_win_rate, confidence, recency_label):
+    client = _gemini_client()
+    if client is None:
+        return None
+    from google.genai import types
+    prompt = f"""You are a terse crypto trading-signal analyst. Analyze ONLY the structured
+data below — never invent prices, news, or facts not given here. Do not give a buy/sell
+recommendation; describe the situation and the key risk factor only.
+
+Ticker: {ticker}
+Direction across reporting channels: {direction}
+Channels reporting: {n_rooms} ({room_names})
+Entry zone: {entry_min:.4f} - {entry_max:.4f}
+Stop loss: {stop_loss:.4f}
+Signal source mix: {source_mix}
+Average historical win rate of these channels: {avg_win_rate}%
+Deterministic confidence score (already computed from channel count, source type,
+recency and win rate — do not recompute or restate this number, just use it as context): {confidence}%
+Most recent signal: {recency_label}
+
+Return strict JSON with exactly two keys:
+"summary": a 1-2 sentence synthesis of the confluence/divergence picture and what it implies.
+"rationale": one short sentence naming the key risk factor to watch.
+"""
+    try:
+        resp = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+                max_output_tokens=400,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        data = json.loads(resp.text)
+        summary = str(data.get("summary", "")).strip()
+        rationale = str(data.get("rationale", "")).strip()
+        return (summary, rationale) if summary else None
+    except Exception:
+        return None
+
+
 conflicts    = detect_conflicts(df_active)
 conflict_cnt = len(conflicts)
 
@@ -1484,22 +1562,29 @@ with t_term:
         else:
             signal_groups = []
             wr_map = _channel_win_rates(df_hist)
+            resolutions = st.session_state.conflict_resolutions
 
             cons_rows = df_active[df_active["group_name"] == "CONSENSUS"]
             for _, row in cons_rows.iterrows():
+                ticker = row["ticker"]
+                # Once a divergence is resolved, the losing side shouldn't keep
+                # showing up on the live board — only the chosen direction does.
+                if ticker in resolutions and row["trade_type"] != resolutions[ticker]:
+                    continue
                 m = re.search(r"CONSENSUS x (\d+)", str(row["raw_message"]))
                 n = int(m.group(1)) if m else 2
                 m2 = re.search(r"Channels: (.+)", str(row["raw_message"]))
                 rooms = m2.group(1) if m2 else "Multiple Channels"
                 grp_df = pd.DataFrame([row])
                 signal_groups.append({
-                    "ticker": row["ticker"], "trade_type": row["trade_type"],
+                    "ticker": ticker, "trade_type": row["trade_type"],
                     "rooms_count": n, "room_names": rooms,
                     "entry_min": float(row["entry_min"]),
                     "entry_max": float(row["entry_max"]),
                     "stop_loss": float(row["stop_loss"]),
                     "source_type": "CONSENSUS", "is_consensus": True,
-                    "diverge": row["ticker"] in conflicts,
+                    "diverge": ticker in conflicts,
+                    "suggested": ticker in resolutions,
                     "grp_df": grp_df,
                     "confidence": compute_confidence(grp_df, df_hist),
                 })
@@ -1507,6 +1592,8 @@ with t_term:
             reg = df_active[df_active["group_name"] != "CONSENSUS"]
             if not reg.empty:
                 for (ticker, ttype), grp in reg.groupby(["ticker", "trade_type"]):
+                    if ticker in resolutions and ttype != resolutions[ticker]:
+                        continue
                     n = grp["group_name"].nunique()
                     rooms = ", ".join(grp["group_name"].unique())
                     src = (grp["source_type"].mode()[0]
@@ -1519,9 +1606,16 @@ with t_term:
                         "stop_loss": float(grp["stop_loss"].mean()),
                         "source_type": src, "is_consensus": False,
                         "diverge": ticker in conflicts,
+                        "suggested": ticker in resolutions,
                         "grp_df": grp.copy(),
                         "confidence": compute_confidence(grp, df_hist),
                     })
+
+            # Resolved divergence picks are surfaced first (they represent an
+            # explicit decision), then ranked by confidence within each group —
+            # so "suggested" positions land in the top row(s) instead of wherever
+            # ticker/direction grouping happened to place them.
+            signal_groups.sort(key=lambda g: (not g["suggested"], -g["confidence"]))
 
             ncols = 3
             for row_start in range(0, len(signal_groups), ncols):
@@ -1541,6 +1635,7 @@ with t_term:
                             g["entry_min"], g["entry_max"], g["stop_loss"], g["source_type"],
                             is_consensus=g["is_consensus"], diverge=g["diverge"],
                             confidence=g["confidence"], hide_ticker=True,
+                            suggested=g["suggested"],
                         ))
                         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1548,7 +1643,7 @@ with t_term:
                 drill = st.session_state.drill_ticker
                 tdf = df_active[df_active["ticker"] == drill]
                 if not tdf.empty:
-                    with st.expander(f"{drill} — Per-Channel Breakdown", expanded=True):
+                    with st.expander(f"{drill} — Full Signal Detail", expanded=True):
                         n_long_ch  = tdf[tdf["trade_type"] == "LONG"]["group_name"].nunique()
                         n_short_ch = tdf[tdf["trade_type"] == "SHORT"]["group_name"].nunique()
                         lp = round(n_long_ch / max(n_long_ch + n_short_ch, 1) * 100, 1)
@@ -1560,6 +1655,87 @@ with t_term:
   <div class="sent-track"><div class="sent-fill" style="width:{lp}%;"></div></div>
 </div>
 """)
+
+                        # ── Historical accuracy for this ticker specifically ──
+                        drill_confidence = compute_confidence(tdf, df_hist)
+                        hist_t = (df_hist[df_hist["ticker"] == drill]
+                                  if not df_hist.empty and "ticker" in df_hist.columns else pd.DataFrame())
+                        if not hist_t.empty and "result" in hist_t.columns:
+                            t_total = len(hist_t)
+                            t_wins  = len(hist_t[hist_t["result"] == "Hit TP"])
+                            t_wr    = round(t_wins / t_total * 100, 1) if t_total else 0.0
+                            t_pnl   = round(hist_t["pnl"].mean(), 2) if "pnl" in hist_t.columns and not hist_t["pnl"].isna().all() else None
+                        else:
+                            t_total, t_wr, t_pnl = 0, None, None
+
+                        md(f"""
+<div class="compare-card" style="margin-bottom:14px;">
+  <div class="compare-title">HISTORICAL ACCURACY — {drill}</div>
+  <div class="compare-row"><span class="compare-label">Confidence Score</span>
+    <span class="compare-val" style="color:#818CF8;">{drill_confidence}%</span></div>
+  <div class="compare-row"><span class="compare-label">Win Rate (closed signals)</span>
+    <span class="compare-val" style="color:#10B981;">{f'{t_wr}%' if t_wr is not None else '—'}</span></div>
+  <div class="compare-row"><span class="compare-label">Avg PnL (closed signals)</span>
+    <span class="compare-val" style="color:{'#10B981' if (t_pnl or 0) >= 0 else '#EF4444'};">{f"{'+' if t_pnl>=0 else ''}{t_pnl}%" if t_pnl is not None else '—'}</span></div>
+  <div class="compare-row"><span class="compare-label">Closed Sample Size</span>
+    <span class="compare-val" style="color:#64748B;">{t_total}</span></div>
+</div>
+""")
+
+                        # ── AI Review — same Gemini synthesis used in the AI Research tab,
+                        # scoped to this one ticker so a drill-down click surfaces it inline. ──
+                        ai_direction  = tdf["trade_type"].mode()[0] if not tdf.empty else "LONG"
+                        ai_n_rooms    = tdf["group_name"].nunique()
+                        ai_room_names = ", ".join(tdf["group_name"].unique())
+                        ai_entry_min  = float(tdf["entry_min"].mean())
+                        ai_entry_max  = float(tdf["entry_max"].mean())
+                        ai_stop_loss  = float(tdf["stop_loss"].mean())
+                        ai_latest     = pd.to_datetime(tdf["created_at"]).max()
+                        ai_recency    = _recency_label(ai_latest) if pd.notna(ai_latest) else "unknown"
+                        ai_src_counts = (tdf["source_type"].value_counts()
+                                         if "source_type" in tdf.columns else pd.Series(dtype=int))
+                        ai_source_mix = ", ".join(f"{k}: {v}" for k, v in ai_src_counts.items()) or "STRUCTURED: 1"
+                        ai_wrs        = [wr_map.get(c, 50.0) for c in tdf["group_name"].unique()]
+                        ai_avg_wr     = round(sum(ai_wrs) / len(ai_wrs), 1) if ai_wrs else 50.0
+
+                        gemini_live_dd = _gemini_client() is not None
+                        ai_result = None
+                        if gemini_live_dd:
+                            ai_result = _gemini_signal_synthesis(
+                                drill, ai_direction, ai_n_rooms, ai_room_names,
+                                ai_entry_min, ai_entry_max, ai_stop_loss,
+                                ai_source_mix, ai_avg_wr, drill_confidence, ai_recency,
+                            )
+
+                        if ai_result:
+                            ai_summary, ai_rationale = ai_result
+                            ai_tag_html = '<span class="ai-conf" style="background:rgba(16,185,129,0.1);color:#10B981;border-color:rgba(16,185,129,0.25);">GEMINI LIVE</span>'
+                        else:
+                            ai_summary = (f"Signal activity detected from {ai_n_rooms} channel(s) with a {ai_direction.lower()} bias "
+                                          f"and {ai_avg_wr}% average historical win rate among reporting channels.")
+                            ai_rationale = ("Add GEMINI_API_KEY to your environment to enable live narrative synthesis."
+                                            if not gemini_live_dd else
+                                            "Gemini call unavailable this cycle — showing data-only fallback.")
+                            ai_tag_html = '<span class="ai-conf">DATA-ONLY</span>'
+
+                        ai_dir_cls = "dir-long" if ai_direction == "LONG" else "dir-short"
+                        md(f"""
+<div class="ai-card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span class="ai-ticker">AI REVIEW</span>
+    <span class="dir-pill {ai_dir_cls}">{ai_direction}</span>
+    {ai_tag_html}
+  </div>
+  <div class="ai-summary">{ai_summary}</div>
+  <div class="ai-rationale">RISK FACTOR: {ai_rationale}</div>
+</div>
+""")
+
+                        st.markdown(
+                            '<div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;'
+                            'color:#334155;font-weight:700;margin:14px 0 8px;">WHO SIGNALED THIS</div>',
+                            unsafe_allow_html=True,
+                        )
                         for _, row in tdf.iterrows():
                             ch = row["group_name"]
                             raw = str(row.get("raw_message", ""))
@@ -2260,70 +2436,6 @@ with t_bias:
   </div>
 </div>
 """)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GEMINI-POWERED SIGNAL SYNTHESIS
-# The model only narrates the structured data we hand it — the confidence score
-# shown to the user is always our own deterministic compute_confidence() value,
-# never something the LLM invents, so the two can't contradict each other.
-# ══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_resource(show_spinner=False)
-def _gemini_client():
-    key = _secret("GEMINI_API_KEY")
-    if not key:
-        return None
-    try:
-        from google import genai
-        return genai.Client(api_key=key)
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def _gemini_signal_synthesis(ticker, direction, n_rooms, room_names, entry_min, entry_max,
-                              stop_loss, source_mix, avg_win_rate, confidence, recency_label):
-    client = _gemini_client()
-    if client is None:
-        return None
-    from google.genai import types
-    prompt = f"""You are a terse crypto trading-signal analyst. Analyze ONLY the structured
-data below — never invent prices, news, or facts not given here. Do not give a buy/sell
-recommendation; describe the situation and the key risk factor only.
-
-Ticker: {ticker}
-Direction across reporting channels: {direction}
-Channels reporting: {n_rooms} ({room_names})
-Entry zone: {entry_min:.4f} - {entry_max:.4f}
-Stop loss: {stop_loss:.4f}
-Signal source mix: {source_mix}
-Average historical win rate of these channels: {avg_win_rate}%
-Deterministic confidence score (already computed from channel count, source type,
-recency and win rate — do not recompute or restate this number, just use it as context): {confidence}%
-Most recent signal: {recency_label}
-
-Return strict JSON with exactly two keys:
-"summary": a 1-2 sentence synthesis of the confluence/divergence picture and what it implies.
-"rationale": one short sentence naming the key risk factor to watch.
-"""
-    try:
-        resp = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.3,
-                max_output_tokens=400,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
-        data = json.loads(resp.text)
-        summary = str(data.get("summary", "")).strip()
-        rationale = str(data.get("rationale", "")).strip()
-        return (summary, rationale) if summary else None
-    except Exception:
-        return None
 
 
 # ════════════════════════════════════════════════════════════════════════════
