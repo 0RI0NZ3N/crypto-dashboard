@@ -505,6 +505,69 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   ROW CARD — replaces raw st.dataframe tables with a clean scannable list
+══════════════════════════════════════════════════════════════════════════ */
+.row-card {
+    background: #131B2E;
+    border: 1px solid #2D3F55;
+    border-left: 3px solid #2D3F55;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.row-card.row-long  { border-left-color: #10B981; }
+.row-card.row-short { border-left-color: #EF4444; }
+.row-card-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 180px; }
+.row-card-chan { font-weight: 700; color: #E2E8F0; font-size: 13px; }
+.row-card-meta { display: flex; gap: 18px; flex-wrap: wrap; }
+.row-card-stat { text-align: right; }
+.row-card-stat-lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #334155; font-weight: 700; }
+.row-card-stat-val { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #CBD5E1; font-weight: 600; }
+.row-card-msg { flex-basis: 100%; font-size: 11.5px; color: #475569; margin-top: 4px; border-top: 1px solid #1E2A3A; padding-top: 8px; }
+
+/* Asset direction bias card (replaces per-asset breakdown dataframe) */
+.asset-bias-card { background: #131B2E; border: 1px solid #2D3F55; border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; }
+.asset-bias-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.asset-bias-ticker { font-weight: 700; color: #F1F5F9; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+.asset-bias-track { width: 100%; height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: #1E2A3A; }
+.asset-bias-long  { background: #10B981; height: 100%; }
+.asset-bias-short { background: #EF4444; height: 100%; }
+.asset-bias-counts { display: flex; justify-content: space-between; font-size: 11px; color: #64748B; margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+
+/* Leaderboard row card (replaces raw channel index dataframe) */
+.lb-row { background: #131B2E; border: 1px solid #2D3F55; border-radius: 10px; padding: 12px 18px; margin-bottom: 8px; display: flex; align-items: center; gap: 16px; }
+.lb-rank { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #475569; font-size: 13px; width: 26px; }
+.lb-name { font-weight: 700; color: #E2E8F0; font-size: 13px; flex: 1 1 160px; min-width: 140px; }
+.lb-bar-track { flex: 2 1 160px; height: 8px; border-radius: 4px; background: #1E2A3A; overflow: hidden; min-width: 100px; }
+.lb-bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg,#38BDF8,#818CF8); }
+.lb-stats { display: flex; gap: 16px; flex: 0 0 auto; }
+.lb-stat { text-align: right; min-width: 58px; }
+.lb-stat-lbl { font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase; color: #334155; font-weight: 700; }
+.lb-stat-val { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; }
+
+/* Stat comparison card (lifetime vs rolling, consensus vs solo, etc.) */
+.compare-card { background: #131B2E; border: 1px solid #2D3F55; border-radius: 12px; padding: 16px 18px; }
+.compare-title { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #64748B; font-weight: 700; margin-bottom: 10px; }
+.compare-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.compare-label { font-size: 12px; color: #94A3B8; }
+.compare-val { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; }
+.trend-up   { color: #10B981; }
+.trend-down { color: #EF4444; }
+.trend-flat { color: #64748B; }
+
+/* Heatmap table (channel x coin win-rate matrix) */
+.heatmap-table { width: 100%; border-collapse: separate; border-spacing: 4px; font-size: 11.5px; }
+.heatmap-table th { color: #64748B; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; padding: 4px 8px; text-align: center; }
+.heatmap-table td { text-align: center; padding: 8px 6px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #0B0F1A; }
+.heatmap-table td.hm-empty { background: #131B2E !important; color: #334155; font-weight: 400; }
+.heatmap-table .hm-rowlabel { text-align: right; color: #CBD5E1; font-family: 'Space Grotesk', sans-serif; font-weight: 700; padding-right: 10px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
    GAUGES
 ══════════════════════════════════════════════════════════════════════════ */
 .gauge-wrap { text-align: center; }
@@ -685,6 +748,10 @@ def load_db() -> tuple:
             );
             ALTER TABLE active_signals
                 ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'STRUCTURED';
+            ALTER TABLE active_signals ADD COLUMN IF NOT EXISTS take_profit DOUBLE PRECISION;
+            ALTER TABLE active_signals ADD COLUMN IF NOT EXISTS price_at_post DOUBLE PRECISION;
+            ALTER TABLE active_signals ADD COLUMN IF NOT EXISTS best_excursion DOUBLE PRECISION;
+            ALTER TABLE active_signals ADD COLUMN IF NOT EXISTS worst_excursion DOUBLE PRECISION;
             CREATE TABLE IF NOT EXISTS closed_signals (
                 id SERIAL PRIMARY KEY, group_name VARCHAR(255),
                 ticker VARCHAR(50), trade_type VARCHAR(10),
@@ -693,6 +760,10 @@ def load_db() -> tuple:
                 pnl_pct DOUBLE PRECISION,
                 closed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            ALTER TABLE closed_signals ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'STRUCTURED';
+            ALTER TABLE closed_signals ADD COLUMN IF NOT EXISTS price_at_post DOUBLE PRECISION;
+            ALTER TABLE closed_signals ADD COLUMN IF NOT EXISTS mae_pct DOUBLE PRECISION;
+            ALTER TABLE closed_signals ADD COLUMN IF NOT EXISTS mfe_pct DOUBLE PRECISION;
             CREATE INDEX IF NOT EXISTS idx_active_signals_created_at ON active_signals (created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_active_signals_ticker_type ON active_signals (ticker, trade_type);
             CREATE INDEX IF NOT EXISTS idx_closed_signals_closed_at ON closed_signals (closed_at DESC);
@@ -728,22 +799,38 @@ def _demo():
     }
     rows = []
     base = datetime.datetime.now() - datetime.timedelta(days=45)
-    for i in range(100):
+    # Give channels distinct underlying skill levels so per-channel /
+    # per-channel-per-coin analytics have something real to show.
+    channel_skill = {"Apex VIP Signals": 0.78, "Bullseye Futures": 0.52,
+                      "Whale Intel Pro": 0.68, "Scalping Command": 0.45}
+    for i in range(220):
         g = np.random.choice(groups); c = np.random.choice(coins)
         t = np.random.choice(["LONG","SHORT"], p=[0.60,0.40])
         ref = REFS[c]; e = round(ref["p"] + np.random.uniform(-ref["s"],ref["s"]),4)
-        win = np.random.choice([True,False], p=[0.70,0.30])
+        win_p = channel_skill[g]
+        win = np.random.choice([True,False], p=[win_p,1-win_p])
         pnl = round(np.random.uniform(3,11) if win else np.random.uniform(-5,-2), 2)
         src = np.random.choice(["STRUCTURED","OPINION"], p=[0.72,0.28])
         lev = np.random.choice([10,20,50,100], p=[0.4,0.4,0.15,0.05])
+        created = base + datetime.timedelta(days=np.random.uniform(0,43),
+                                             hours=np.random.uniform(0,24))
+        # Simulate signal latency: most signals post close to entry, some
+        # channels post noticeably after the move already happened.
+        latency_bias = 0.003 if g != "Scalping Command" else 0.018
+        price_at_post = round(e * (1 + np.random.uniform(-latency_bias, latency_bias)), 4)
+        # MAE = how much it drew down against the position before resolving;
+        # MFE = the best excursion in favor (>= final pnl for winners).
+        mae_pct = round(np.random.uniform(0.3, 3.5), 2)
+        mfe_pct = round(pnl + np.random.uniform(0, 2.5), 2) if win else round(np.random.uniform(0.2, 2.0), 2)
         rows.append({
             "id":i,"group_name":g,"ticker":c,"trade_type":t,
             "entry_min":e,"entry_max":round(e*1.005,4),
             "stop_loss":round(e*(0.97 if t=="LONG" else 1.03),4),
             "source_type":src,
             "raw_message":f"[DEMO] {g} {t} {c} entry {e} (Leverage: Cross {lev}x)",
-            "created_at":base+datetime.timedelta(days=np.random.uniform(0,43)),
+            "created_at":created,
             "result":"Hit TP" if win else "Hit SL","pnl":pnl,
+            "price_at_post": price_at_post, "mae_pct": mae_pct, "mfe_pct": mfe_pct,
         })
     df_h = pd.DataFrame(rows).sort_values("created_at", ascending=False)
     acts = [
@@ -787,37 +874,48 @@ def _extract_lev(t):
     m = re.search(r'(\d{1,3})\s*[xX]\b', str(t))
     return int(m.group(1)) if m else None
 
+df_stale = pd.DataFrame()  # active signals older than 24h, still genuinely open (no result yet)
+
 if IS_LIVE:
     raw = db_all.copy()
     raw["created_at"] = pd.to_datetime(raw["created_at"])
     if "source_type" not in raw.columns:
         raw["source_type"] = "STRUCTURED"
 
-    cutoff   = datetime.datetime.now() - datetime.timedelta(hours=24)
+    cutoff    = datetime.datetime.now() - datetime.timedelta(hours=24)
     df_active = raw[raw["created_at"] >= cutoff].copy()
-    df_hist   = raw[raw["created_at"] <  cutoff].copy()
+    df_stale  = raw[raw["created_at"] <  cutoff].copy()  # still open, just aging — NOT a result
 
-    if not df_hist.empty:
-        np.random.seed(77)
-        n = len(df_hist)
-        df_hist = df_hist.copy()
-        df_hist["result"] = np.random.choice(["Hit TP","Hit SL","Manual Close"], size=n, p=[0.68,0.22,0.10])
-        df_hist["pnl"] = df_hist["result"].apply(
-            lambda r: round(np.random.uniform(3,12),2) if r=="Hit TP"
-                      else (round(np.random.uniform(-5,-2),2) if r=="Hit SL"
-                            else round(np.random.uniform(-1,2),2)))
-
+    # df_hist is built ONLY from real closed_signals. Previously, any active
+    # signal older than 24h was assigned a randomly-generated win/loss and
+    # PnL, which meant every "historical" stat (win rate, leaderboard,
+    # analytics, market bias) was fabricated rather than derived from real
+    # price outcomes. Now that scraper.py actually closes signals against
+    # live prices, we only trust real closed rows.
     if db_closed is not None and not db_closed.empty:
-        db_closed["result"] = db_closed["result"].str.replace("HIT_TP","Hit TP",regex=False)\
-                                                  .str.replace("HIT_SL","Hit SL",regex=False)\
-                                                  .str.replace("MANUAL","Manual Close",regex=False)
-        db_closed["pnl"] = db_closed["pnl_pct"]
-        df_hist = pd.concat([df_hist, db_closed], ignore_index=True)
+        df_hist = db_closed.copy()
+        df_hist["result"] = df_hist["result"].str.replace("HIT_TP","Hit TP",regex=False)\
+                                              .str.replace("HIT_SL","Hit SL",regex=False)\
+                                              .str.replace("MANUAL","Manual Close",regex=False)
+        df_hist["pnl"]         = df_hist["pnl_pct"]
+        df_hist["created_at"]  = pd.to_datetime(df_hist["closed_at"])
+        df_hist["entry_min"]   = df_hist["entry_price"]
+        df_hist["entry_max"]   = df_hist["entry_price"]
+        df_hist["raw_message"] = df_hist.apply(
+            lambda r: f"{r['ticker']} {r['trade_type']} closed [{r['result']}] "
+                      f"entry {r['entry_price']:.4f} -> exit {r['exit_price']:.4f}", axis=1)
+    else:
+        df_hist = pd.DataFrame(columns=[
+            "group_name","ticker","trade_type","entry_min","entry_max","stop_loss",
+            "result","pnl","created_at","raw_message","source_type",
+        ])
 else:
     df_active, df_hist = _demo()
 
 df_active["leverage"] = df_active["raw_message"].apply(_extract_lev)
-df_hist["leverage"]   = df_hist["raw_message"].apply(_extract_lev)
+df_hist["leverage"]   = df_hist["raw_message"].apply(_extract_lev) if not df_hist.empty else None
+if not df_stale.empty:
+    df_stale["leverage"] = df_stale["raw_message"].apply(_extract_lev)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -952,6 +1050,203 @@ def _channel_win_rates(hist_df) -> dict:
     return rates
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# EDGE ANALYTICS — derived entirely from real closed-signal outcomes
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _wr(df) -> float:
+    if df.empty:
+        return 0.0
+    return round(len(df[df["result"] == "Hit TP"]) / len(df) * 100, 1)
+
+
+def channel_skill_decay(hist_df, days=30, min_samples=5) -> list:
+    """Lifetime win rate vs a trailing window, per channel — surfaces
+    channels that are currently cold even if their all-time record looks good."""
+    out = []
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return out
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"].copy()
+    if src.empty:
+        return out
+    src["created_at"] = pd.to_datetime(src["created_at"])
+    cutoff = pd.Timestamp.now(tz=src["created_at"].dt.tz) - datetime.timedelta(days=days)
+    for grp in src["group_name"].unique():
+        gd = src[src["group_name"] == grp]
+        if len(gd) < min_samples:
+            continue
+        recent = gd[gd["created_at"] >= cutoff]
+        lifetime_wr = _wr(gd)
+        recent_wr   = _wr(recent) if len(recent) >= min_samples else None
+        out.append({
+            "channel": grp, "lifetime_wr": lifetime_wr, "recent_wr": recent_wr,
+            "lifetime_n": len(gd), "recent_n": len(recent),
+        })
+    return sorted(out, key=lambda r: r["lifetime_wr"], reverse=True)
+
+
+def channel_coin_matrix(hist_df, min_samples=3):
+    """Per-(channel, coin) win rate matrix — a channel's edge is often
+    concentrated in one or two assets rather than spread evenly.
+    Returns (channels, tickers, cells) where cells maps (channel, ticker) -> {wr, n}."""
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return [], [], {}
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"].copy()
+    if src.empty:
+        return [], [], {}
+    grouped = src.groupby(["group_name", "ticker"])
+    cells = {}
+    for (grp, tkr), gd in grouped:
+        if len(gd) >= min_samples:
+            cells[(grp, tkr)] = {"wr": _wr(gd), "n": len(gd)}
+    if not cells:
+        return [], [], {}
+    channels = sorted({k[0] for k in cells}, key=lambda c: -sum(v["n"] for k, v in cells.items() if k[0] == c))
+    tickers  = sorted({k[1] for k in cells}, key=lambda t: -sum(v["n"] for k, v in cells.items() if k[1] == t))
+    return channels[:8], tickers[:8], cells
+
+
+def consensus_vs_solo(hist_df) -> dict:
+    """Does multi-channel agreement actually outperform single-channel calls?
+    Approximated from the data model we have: closed CONSENSUS rows (2+
+    channels agreed) vs closed single-channel rows."""
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return {}
+    cons = hist_df[hist_df["group_name"] == "CONSENSUS"]
+    solo = hist_df[hist_df["group_name"] != "CONSENSUS"]
+    return {
+        "consensus_wr": _wr(cons), "consensus_n": len(cons),
+        "consensus_pnl": round(cons["pnl"].mean(), 2) if not cons.empty else 0.0,
+        "solo_wr": _wr(solo), "solo_n": len(solo),
+        "solo_pnl": round(solo["pnl"].mean(), 2) if not solo.empty else 0.0,
+    }
+
+
+def channel_expectancy(hist_df, min_samples=5) -> list:
+    """Expectancy = (win% x avg win) - (loss% x avg loss). Ranks channels by
+    what they actually pay out, not just how often they're right — a 40%
+    win rate with big winners can beat a 70% win rate with tiny ones."""
+    out = []
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return out
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"]
+    for grp in src["group_name"].unique():
+        gd = src[src["group_name"] == grp]
+        if len(gd) < min_samples:
+            continue
+        wins = gd[gd["result"] == "Hit TP"]
+        losses = gd[gd["result"] == "Hit SL"]
+        win_pct = len(wins) / len(gd)
+        loss_pct = len(losses) / len(gd)
+        avg_win = wins["pnl"].mean() if not wins.empty else 0.0
+        avg_loss = abs(losses["pnl"].mean()) if not losses.empty else 0.0
+        expectancy = round(win_pct * avg_win - loss_pct * avg_loss, 3)
+        out.append({
+            "channel": grp, "expectancy": expectancy, "win_pct": round(win_pct*100,1),
+            "avg_win": round(avg_win,2), "avg_loss": round(avg_loss,2), "n": len(gd),
+        })
+    return sorted(out, key=lambda r: r["expectancy"], reverse=True)
+
+
+def entry_latency_stats(hist_df, tolerance_pct=0.3, min_samples=5) -> list:
+    """% of a channel's signals where the stated entry zone was still
+    reachable at the moment the signal was posted, using price_at_post.
+    Low 'fresh' rates suggest a channel is posting after the move already
+    happened (a common paid-group trick)."""
+    out = []
+    if (hist_df is None or hist_df.empty
+            or "price_at_post" not in hist_df.columns
+            or hist_df["price_at_post"].isna().all()):
+        return out
+    src = hist_df[(hist_df["group_name"] != "CONSENSUS") & hist_df["price_at_post"].notna()]
+    for grp in src["group_name"].unique():
+        gd = src[src["group_name"] == grp]
+        if len(gd) < min_samples:
+            continue
+        tol = gd["entry_min"] * (tolerance_pct / 100)
+        fresh = ((gd["price_at_post"] >= gd["entry_min"] - tol) &
+                  (gd["price_at_post"] <= gd["entry_max"] + tol))
+        out.append({
+            "channel": grp,
+            "fresh_pct": round(fresh.mean() * 100, 1),
+            "n": len(gd),
+        })
+    return sorted(out, key=lambda r: r["fresh_pct"], reverse=True)
+
+
+def excursion_stats(hist_df, min_samples=5) -> list:
+    """Average drawdown winners survive (MAE) and average favorable move
+    losers still got (MFE) before reversing, per channel."""
+    out = []
+    if (hist_df is None or hist_df.empty
+            or "mae_pct" not in hist_df.columns
+            or hist_df["mae_pct"].isna().all()):
+        return out
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"]
+    for grp in src["group_name"].unique():
+        gd = src[src["group_name"] == grp]
+        if len(gd) < min_samples:
+            continue
+        wins = gd[gd["result"] == "Hit TP"]
+        losses = gd[gd["result"] == "Hit SL"]
+        out.append({
+            "channel": grp,
+            "avg_mae_winners": round(wins["mae_pct"].mean(), 2) if not wins.empty and wins["mae_pct"].notna().any() else None,
+            "avg_mfe_losers":  round(losses["mfe_pct"].mean(), 2) if not losses.empty and losses["mfe_pct"].notna().any() else None,
+            "n": len(gd),
+        })
+    return out
+
+
+def divergence_track_record(hist_df, window_hours=24) -> list:
+    """Approximate divergence resolution: for each ticker, find same-day
+    windows where both LONG and SHORT closed signals occurred, and tally
+    which direction actually won more often in those overlapping windows."""
+    out = []
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return out
+    src = hist_df[hist_df["group_name"] != "CONSENSUS"].copy()
+    if src.empty:
+        return out
+    src["created_at"] = pd.to_datetime(src["created_at"])
+    src["_day"] = src["created_at"].dt.date
+    for ticker in src["ticker"].unique():
+        td = src[src["ticker"] == ticker]
+        overlap_days = set(td[td["trade_type"]=="LONG"]["_day"]) & set(td[td["trade_type"]=="SHORT"]["_day"])
+        if not overlap_days:
+            continue
+        window = td[td["_day"].isin(overlap_days)]
+        long_wr  = _wr(window[window["trade_type"]=="LONG"])
+        short_wr = _wr(window[window["trade_type"]=="SHORT"])
+        n = len(window)
+        if n < 4:
+            continue
+        out.append({
+            "ticker": ticker, "long_wr": long_wr, "short_wr": short_wr,
+            "n_days": len(overlap_days), "n": n,
+        })
+    return sorted(out, key=lambda r: r["n"], reverse=True)
+
+
+def timing_patterns(hist_df):
+    """Win rate by hour-of-day and day-of-week — cheap to compute, sometimes
+    reveals that weekend / off-hours signals underperform."""
+    if hist_df is None or hist_df.empty or "result" not in hist_df.columns:
+        return None, None
+    src = hist_df.copy()
+    src["created_at"] = pd.to_datetime(src["created_at"])
+    src["hour"] = src["created_at"].dt.hour
+    src["weekday"] = src["created_at"].dt.day_name()
+    by_hour = src.groupby("hour").apply(
+        lambda g: pd.Series({"Win Rate": _wr(g), "Signals": len(g)})
+    ).reset_index()
+    order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    by_day = src.groupby("weekday").apply(
+        lambda g: pd.Series({"Win Rate": _wr(g), "Signals": len(g)})
+    ).reindex(order).dropna().reset_index()
+    return by_hour, by_day
+
+
 def compute_confidence(grp_df, hist_df) -> int:
     """Score a (ticker, direction) group 0–100 from agreement, source, recency, win rate."""
     if grp_df is None or grp_df.empty:
@@ -1010,14 +1305,15 @@ def detect_conflicts(df_active) -> dict:
     return out
 
 
-def _risk_pct(entry_mid, stop) -> str:
-    """Entry-to-stop distance as a % of entry. No take-profit field exists in the
-    schema, so a real reward:risk ratio can't be computed — this is an honest
-    proxy that's still useful for comparing downside exposure between two sides."""
-    if entry_mid == 0:
+# Must match TARGET_RR in scraper.py — that's the multiple the outcome
+# tracker actually uses to decide when a signal has hit its take-profit.
+TARGET_RR = 2.0
+
+def _estimate_rr(entry_mid, stop, trade_type) -> str:
+    risk = abs(entry_mid - stop)
+    if risk == 0:
         return "—"
-    pct = abs(entry_mid - stop) / entry_mid * 100
-    return f"{pct:.1f}%"
+    return f"1:{TARGET_RR:.1f}"
 
 
 def _recency_label(ts) -> str:
@@ -1051,7 +1347,7 @@ def _conflict_side_html(trade_type, side_df, hist_df) -> str:
   <div class="conflict-stat"><span style="color:#64748B;">Entry Zone</span><br>
     <b>{side_df['entry_min'].mean():.4f} – {side_df['entry_max'].mean():.4f}</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Stop Loss</span><br><b style="color:#EF4444;">{stop:.4f}</b></div>
-  <div class="conflict-stat"><span style="color:#64748B;">Risk % (Entry→SL)</span><br><b>{_risk_pct(entry_mid, stop)}</b></div>
+  <div class="conflict-stat"><span style="color:#64748B;">Est. R:R</span><br><b>{_estimate_rr(entry_mid, stop, trade_type)}</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Avg Channel Win Rate</span><br><b>{avg_wr}%</b></div>
   <div class="conflict-stat"><span style="color:#64748B;">Latest Signal</span><br><b>{_recency_label(latest)}</b></div>
   <div class="conflict-stat" style="margin-top:10px;">
@@ -1264,26 +1560,37 @@ with t_term:
   <div class="sent-track"><div class="sent-fill" style="width:{lp}%;"></div></div>
 </div>
 """)
-                        drill_rows = []
                         for _, row in tdf.iterrows():
                             ch = row["group_name"]
                             raw = str(row.get("raw_message", ""))
-                            preview = raw[:80] + ("…" if len(raw) > 80 else "")
+                            preview = raw[:110] + ("…" if len(raw) > 110 else "")
                             wr_val = wr_map.get(ch)
-                            drill_rows.append({
-                                "Channel": ch,
-                                "Direction": row["trade_type"],
-                                "Entry": f"{row['entry_min']:.4f}–{row['entry_max']:.4f}",
-                                "Stop": f"{row['stop_loss']:.4f}",
-                                "Source": row.get("source_type", "STRUCTURED"),
-                                "Win Rate": f"{wr_val}%" if wr_val is not None else "—",
-                                "Raw Message": preview,
-                            })
-                        st.dataframe(
-                            pd.DataFrame(drill_rows),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                            side_cls = "row-long" if row["trade_type"] == "LONG" else "row-short"
+                            dir_color = "#10B981" if row["trade_type"] == "LONG" else "#EF4444"
+                            md(f"""
+<div class="row-card {side_cls}">
+  <div class="row-card-main">
+    <span class="row-card-chan">{ch}</span>
+    <span class="dir-pill {'dir-long' if row['trade_type']=='LONG' else 'dir-short'}">{row['trade_type']}</span>
+    <span class="tag {'tag-opinion' if row.get('source_type')=='OPINION' else 'tag-struct'}">{row.get('source_type','STRUCTURED')}</span>
+  </div>
+  <div class="row-card-meta">
+    <div class="row-card-stat">
+      <div class="row-card-stat-lbl">Entry Zone</div>
+      <div class="row-card-stat-val">{row['entry_min']:.4f}–{row['entry_max']:.4f}</div>
+    </div>
+    <div class="row-card-stat">
+      <div class="row-card-stat-lbl">Stop Loss</div>
+      <div class="row-card-stat-val" style="color:#F87171;">{row['stop_loss']:.4f}</div>
+    </div>
+    <div class="row-card-stat">
+      <div class="row-card-stat-lbl">Channel Win Rate</div>
+      <div class="row-card-stat-val" style="color:{dir_color};">{f'{wr_val}%' if wr_val is not None else '—'}</div>
+    </div>
+  </div>
+  <div class="row-card-msg">{preview}</div>
+</div>
+""")
 
     with side_col:
         st.markdown(
@@ -1345,37 +1652,43 @@ with t_anal:
         unsafe_allow_html=True,
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Most Signaled Assets**")
-        if not df_hist.empty:
-            tc = df_hist["ticker"].value_counts().reset_index()
-            tc.columns = ["Asset", "Signals"]
-            st.bar_chart(tc.set_index("Asset"), color="#38BDF8", use_container_width=True)
-        else:
-            st.info("Awaiting historical data.")
+    (a_over, a_skill, a_edge, a_exec, a_time) = st.tabs([
+        "OVERVIEW", "CHANNEL SKILL", "CONSENSUS & EXPECTANCY",
+        "EXECUTION QUALITY", "DIVERGENCE & TIMING",
+    ])
 
-    with c2:
-        st.markdown("**Average Leverage by Asset**")
-        if not df_hist.empty:
-            dl = df_hist[df_hist["leverage"].notna()]
-            if not dl.empty:
-                al = dl.groupby("ticker")["leverage"].mean().reset_index()
-                st.bar_chart(al.set_index("ticker"), color="#818CF8", use_container_width=True)
+    # ── OVERVIEW ──────────────────────────────────────────────────────────
+    with a_over:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Most Signaled Assets**")
+            if not df_hist.empty:
+                tc = df_hist["ticker"].value_counts().reset_index()
+                tc.columns = ["Asset", "Signals"]
+                st.bar_chart(tc.set_index("Asset"), color="#38BDF8", use_container_width=True)
             else:
-                st.info("Leverage extracted once scraper processes tagged messages.")
-        else:
-            st.info("Awaiting historical data.")
+                st.info("Awaiting historical data.")
 
-    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("**Average Leverage by Asset**")
+            if not df_hist.empty:
+                dl = df_hist[df_hist["leverage"].notna()]
+                if not dl.empty:
+                    al = dl.groupby("ticker")["leverage"].mean().reset_index()
+                    st.bar_chart(al.set_index("ticker"), color="#818CF8", use_container_width=True)
+                else:
+                    st.info("Leverage extracted once scraper processes tagged messages.")
+            else:
+                st.info("Awaiting historical data.")
 
-    # Long/Short bias bar
-    if not df_hist.empty:
-        n_tot  = len(df_hist)
-        n_long = len(df_hist[df_hist["trade_type"] == "LONG"])
-        lp     = round(n_long / n_tot * 100, 1) if n_tot else 50
-        sp     = round(100 - lp, 1)
-        md(f"""
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+        if not df_hist.empty:
+            n_tot  = len(df_hist)
+            n_long = len(df_hist[df_hist["trade_type"] == "LONG"])
+            lp     = round(n_long / n_tot * 100, 1) if n_tot else 50
+            sp     = round(100 - lp, 1)
+            md(f"""
 <div class="sent-wrap">
   <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;">
     <span style="color:#10B981;">LONG {lp}% ({n_long:,} signals)</span>
@@ -1385,23 +1698,264 @@ with t_anal:
 </div>
 """)
 
-    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-    # Source distribution
-    if not df_hist.empty and "source_type" in df_hist.columns:
-        st.markdown("**Signal Source Distribution — Structured vs AI Opinion**")
-        sc = df_hist["source_type"].value_counts().reset_index()
-        sc.columns = ["Type", "Count"]
-        st.bar_chart(sc.set_index("Type"), color="#FBBF24", use_container_width=True)
+        oc1, oc2 = st.columns(2)
+        with oc1:
+            if not df_hist.empty and "source_type" in df_hist.columns:
+                st.markdown("**Signal Source Distribution — Structured vs AI Opinion**")
+                sc = df_hist["source_type"].value_counts().reset_index()
+                sc.columns = ["Type", "Count"]
+                st.bar_chart(sc.set_index("Type"), color="#FBBF24", use_container_width=True)
+        with oc2:
+            # Opinion vs structured performance — are AI-digested opinion
+            # signals actually worth acting on, or should consensus counting
+            # exclude them?
+            if not df_hist.empty and "source_type" in df_hist.columns and "result" in df_hist.columns:
+                st.markdown("**Win Rate — Structured vs AI Opinion**")
+                struct_wr = _wr(df_hist[df_hist["source_type"] == "STRUCTURED"])
+                opin_wr   = _wr(df_hist[df_hist["source_type"] == "OPINION"])
+                struct_n  = len(df_hist[df_hist["source_type"] == "STRUCTURED"])
+                opin_n    = len(df_hist[df_hist["source_type"] == "OPINION"])
+                md(f"""
+<div class="compare-card">
+  <div class="compare-row"><span class="compare-label">STRUCTURED ({struct_n})</span>
+    <span class="compare-val" style="color:#38BDF8;">{struct_wr}%</span></div>
+  <div class="compare-row"><span class="compare-label">AI OPINION ({opin_n})</span>
+    <span class="compare-val" style="color:#FBBF24;">{opin_wr}%</span></div>
+</div>
+""")
 
-    # Activity timeline
-    st.markdown("**Signal Volume Over Time**")
-    if not df_hist.empty:
-        df_hist["_date"] = pd.to_datetime(df_hist["created_at"]).dt.date
-        ts = df_hist.groupby("_date").size().reset_index(name="Signals")
-        st.line_chart(ts.set_index("_date"), color="#10B981", use_container_width=True)
-    else:
-        st.info("Awaiting historical data.")
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+        st.markdown("**Signal Volume Over Time**")
+        if not df_hist.empty:
+            df_hist["_date"] = pd.to_datetime(df_hist["created_at"]).dt.date
+            ts = df_hist.groupby("_date").size().reset_index(name="Signals")
+            st.line_chart(ts.set_index("_date"), color="#10B981", use_container_width=True)
+        else:
+            st.info("Awaiting historical data.")
+
+    # ── CHANNEL SKILL ─────────────────────────────────────────────────────
+    with a_skill:
+        st.caption(
+            "Lifetime win rate can hide a channel that's gone cold recently. "
+            "The 30-day column shows whether their edge is holding up."
+        )
+        decay = channel_skill_decay(df_hist, days=30, min_samples=5)
+        if not decay:
+            st.info("Needs at least 5 closed signals per channel to compare lifetime vs 30-day performance.")
+        else:
+            for r in decay:
+                if r["recent_wr"] is None:
+                    trend_cls, trend_txt = "trend-flat", "— not enough recent data"
+                else:
+                    delta = r["recent_wr"] - r["lifetime_wr"]
+                    trend_cls = "trend-up" if delta > 3 else ("trend-down" if delta < -3 else "trend-flat")
+                    arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "■")
+                    trend_txt = f"{arrow} {delta:+.1f} pts vs lifetime"
+                recent_val = f"{r['recent_wr']}%" if r["recent_wr"] is not None else "—"
+                md(f"""
+<div class="lb-row">
+  <div class="lb-name">{r['channel']}</div>
+  <div class="lb-stats">
+    <div class="lb-stat"><div class="lb-stat-lbl">Lifetime WR</div>
+      <div class="lb-stat-val" style="color:#94A3B8;">{r['lifetime_wr']}%</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">30d WR</div>
+      <div class="lb-stat-val" style="color:#38BDF8;">{recent_val}</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Trend</div>
+      <div class="lb-stat-val {trend_cls}" style="font-size:11px;">{trend_txt}</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Signals</div>
+      <div class="lb-stat-val" style="color:#64748B;">{r['lifetime_n']}</div></div>
+  </div>
+</div>
+""")
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        st.markdown("**Per-Channel, Per-Coin Win Rate** &mdash; where each channel's edge is actually concentrated")
+        channels, tickers, cells = channel_coin_matrix(df_hist, min_samples=3)
+        if not channels:
+            st.info("Needs at least 3 closed signals for a given channel+coin pair to show here.")
+        else:
+            def _hm_color(wr):
+                # green at high win rate, red at low, muted amber in between
+                if wr >= 65: return "#10B981"
+                if wr >= 50: return "#84CC16"
+                if wr >= 35: return "#F59E0B"
+                return "#EF4444"
+            rows_html = ""
+            for ch in channels:
+                cells_html = f'<td class="hm-rowlabel">{ch}</td>'
+                for tk in tickers:
+                    c = cells.get((ch, tk))
+                    if c is None:
+                        cells_html += '<td class="hm-empty">—</td>'
+                    else:
+                        cells_html += (f'<td style="background:{_hm_color(c["wr"])};" '
+                                       f'title="{c["n"]} signals">{c["wr"]}%</td>')
+                rows_html += f"<tr>{cells_html}</tr>"
+            header_html = "<th></th>" + "".join(f"<th>{tk}</th>" for tk in tickers)
+            md(f'<table class="heatmap-table"><tr>{header_html}</tr>{rows_html}</table>')
+            st.caption("Cell = win rate for that channel on that asset (min. 3 closed signals). Hover a cell for sample size.")
+
+    # ── CONSENSUS & EXPECTANCY ────────────────────────────────────────────
+    with a_edge:
+        st.markdown("**Does multi-channel consensus actually outperform single-channel calls?**")
+        cvs = consensus_vs_solo(df_hist)
+        if not cvs or (cvs["consensus_n"] == 0 and cvs["solo_n"] == 0):
+            st.info("Awaiting closed signals to compare consensus vs solo performance.")
+        else:
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                md(f"""
+<div class="compare-card">
+  <div class="compare-title">CONSENSUS SIGNALS (2+ CHANNELS AGREED)</div>
+  <div class="compare-row"><span class="compare-label">Win Rate</span>
+    <span class="compare-val" style="color:#10B981;">{cvs['consensus_wr']}%</span></div>
+  <div class="compare-row"><span class="compare-label">Avg PnL</span>
+    <span class="compare-val" style="color:{'#10B981' if cvs['consensus_pnl']>=0 else '#EF4444'};">{'+' if cvs['consensus_pnl']>=0 else ''}{cvs['consensus_pnl']}%</span></div>
+  <div class="compare-row"><span class="compare-label">Sample Size</span>
+    <span class="compare-val" style="color:#64748B;">{cvs['consensus_n']}</span></div>
+</div>
+""")
+            with cc2:
+                md(f"""
+<div class="compare-card">
+  <div class="compare-title">SINGLE-CHANNEL SIGNALS</div>
+  <div class="compare-row"><span class="compare-label">Win Rate</span>
+    <span class="compare-val" style="color:#38BDF8;">{cvs['solo_wr']}%</span></div>
+  <div class="compare-row"><span class="compare-label">Avg PnL</span>
+    <span class="compare-val" style="color:{'#10B981' if cvs['solo_pnl']>=0 else '#EF4444'};">{'+' if cvs['solo_pnl']>=0 else ''}{cvs['solo_pnl']}%</span></div>
+  <div class="compare-row"><span class="compare-label">Sample Size</span>
+    <span class="compare-val" style="color:#64748B;">{cvs['solo_n']}</span></div>
+</div>
+""")
+            st.caption(
+                "Approximate: consensus rows are the aggregated CONSENSUS entries your consolidation "
+                "engine creates when 2+ channels agree; solo rows are everything else. If consensus "
+                "doesn't clearly outperform, that's a sign the channels may be echoing each other "
+                "rather than independently confirming a move."
+            )
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        st.markdown("**Channel Expectancy** &mdash; ranked by what each channel actually pays out, not just how often it's right")
+        exp = channel_expectancy(df_hist, min_samples=5)
+        if not exp:
+            st.info("Needs at least 5 closed signals per channel to compute expectancy.")
+        else:
+            for r in exp:
+                exp_color = "#10B981" if r["expectancy"] > 0 else "#EF4444"
+                md(f"""
+<div class="lb-row">
+  <div class="lb-name">{r['channel']}</div>
+  <div class="lb-stats">
+    <div class="lb-stat"><div class="lb-stat-lbl">Expectancy</div>
+      <div class="lb-stat-val" style="color:{exp_color};">{'+' if r['expectancy']>=0 else ''}{r['expectancy']}%/trade</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Win %</div>
+      <div class="lb-stat-val" style="color:#38BDF8;">{r['win_pct']}%</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Avg Win</div>
+      <div class="lb-stat-val" style="color:#10B981;">+{r['avg_win']}%</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Avg Loss</div>
+      <div class="lb-stat-val" style="color:#EF4444;">-{r['avg_loss']}%</div></div>
+    <div class="lb-stat"><div class="lb-stat-lbl">Signals</div>
+      <div class="lb-stat-val" style="color:#64748B;">{r['n']}</div></div>
+  </div>
+</div>
+""")
+            st.caption("Expectancy = (win% × avg win) − (loss% × avg loss). Positive means the channel is profitable on average per signal.")
+
+    # ── EXECUTION QUALITY ─────────────────────────────────────────────────
+    with a_exec:
+        st.markdown("**Entry Freshness** &mdash; was the stated entry zone still reachable when the signal was posted?")
+        latency = entry_latency_stats(df_hist)
+        if not latency:
+            st.info(
+                "Needs price_at_post data, which is only captured for signals ingested in real time "
+                "going forward (not backfilled history). Give it a few days of live signals."
+            )
+        else:
+            for r in latency:
+                bar_color = "#10B981" if r["fresh_pct"] >= 70 else ("#F59E0B" if r["fresh_pct"] >= 40 else "#EF4444")
+                md(f"""
+<div class="asset-bias-card">
+  <div class="asset-bias-top">
+    <span class="asset-bias-ticker">{r['channel']}</span>
+    <span style="font-size:11px;color:#64748B;">{r['n']} signals</span>
+  </div>
+  <div class="asset-bias-track"><div style="width:{r['fresh_pct']}%;height:100%;background:{bar_color};"></div></div>
+  <div class="asset-bias-counts"><span>Entry still reachable at post time</span><span style="color:{bar_color};">{r['fresh_pct']}%</span></div>
+</div>
+""")
+            st.caption("Low percentages suggest a channel often posts after the move has already happened.")
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        st.markdown("**Drawdown to Target (MAE / MFE)**")
+        exc = excursion_stats(df_hist)
+        if not exc:
+            st.info(
+                "Needs mae_pct/mfe_pct data, populated by the outcome tracker for signals closed "
+                "going forward. Give it time to accumulate closed signals."
+            )
+        else:
+            for r in exc:
+                mae_txt = f"-{r['avg_mae_winners']}%" if r["avg_mae_winners"] is not None else "—"
+                mfe_txt = f"+{r['avg_mfe_losers']}%" if r["avg_mfe_losers"] is not None else "—"
+                md(f"""
+<div class="row-card">
+  <div class="row-card-main"><span class="row-card-chan">{r['channel']}</span>
+    <span style="font-size:11px;color:#64748B;">{r['n']} signals</span></div>
+  <div class="row-card-meta">
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Avg Heat Before Winning</div>
+      <div class="row-card-stat-val" style="color:#F59E0B;">{mae_txt}</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">Avg Favorable Move Before Losing</div>
+      <div class="row-card-stat-val" style="color:#818CF8;">{mfe_txt}</div></div>
+  </div>
+</div>
+""")
+            st.caption(
+                "'Heat before winning' = how far winning trades drew down before recovering to TP — "
+                "high values suggest stops are tight relative to normal volatility. 'Favorable move before "
+                "losing' = how close losing trades got before reversing to SL."
+            )
+
+    # ── DIVERGENCE & TIMING ────────────────────────────────────────────────
+    with a_time:
+        st.markdown("**Divergence Track Record** &mdash; when a ticker had both LONG and SHORT signals the same day, which side actually won?")
+        div_rec = divergence_track_record(df_hist)
+        if not div_rec:
+            st.info("Needs overlapping same-day LONG and SHORT closed signals on the same ticker to compare.")
+        else:
+            for r in div_rec:
+                long_c  = "#10B981" if r["long_wr"]  > r["short_wr"] else "#64748B"
+                short_c = "#EF4444" if r["short_wr"] > r["long_wr"]  else "#64748B"
+                md(f"""
+<div class="row-card">
+  <div class="row-card-main"><span class="row-card-chan">{r['ticker']}</span>
+    <span style="font-size:11px;color:#64748B;">{r['n_days']} overlapping day(s), {r['n']} signals</span></div>
+  <div class="row-card-meta">
+    <div class="row-card-stat"><div class="row-card-stat-lbl">LONG Win Rate</div>
+      <div class="row-card-stat-val" style="color:{long_c};">{r['long_wr']}%</div></div>
+    <div class="row-card-stat"><div class="row-card-stat-lbl">SHORT Win Rate</div>
+      <div class="row-card-stat-val" style="color:{short_c};">{r['short_wr']}%</div></div>
+  </div>
+</div>
+""")
+            st.caption("Approximate: 'same day' is used as a proxy for a genuine divergence window.")
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        st.markdown("**Timing Patterns**")
+        by_hour, by_day = timing_patterns(df_hist)
+        if by_hour is None or by_hour.empty:
+            st.info("Awaiting closed signals to analyze timing patterns.")
+        else:
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                st.markdown("*Win Rate by Hour of Day (UTC-local)*")
+                st.bar_chart(by_hour.set_index("hour")["Win Rate"], color="#38BDF8", use_container_width=True)
+            with tc2:
+                st.markdown("*Win Rate by Day of Week*")
+                st.bar_chart(by_day.set_index("weekday")["Win Rate"], color="#818CF8", use_container_width=True)
+            st.caption("Based on signal creation time, not necessarily local trading-session time.")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1452,15 +2006,34 @@ with t_chan:
         _pod(p3c, 2, "#3", "pod-3")
 
         st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-        lb_df.index = range(1, len(lb_df)+1)
-        st.dataframe(lb_df, use_container_width=True, column_config={
-            "Channel":  st.column_config.TextColumn("Signal Channel", width="medium"),
-            "Score":    st.column_config.NumberColumn("Consistency Score", format="%.1f"),
-            "Signals":  st.column_config.NumberColumn("Total Signals", format="%d"),
-            "TP Hits":  st.column_config.NumberColumn("TP Hits", format="%d"),
-            "Win Rate": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=100),
-            "Avg PnL":  st.column_config.NumberColumn("Avg PnL", format="%+.2f%%"),
-        })
+        lb_df = lb_df.reset_index(drop=True)
+        for i, r in lb_df.iterrows():
+            pnl_c = "#10B981" if r["Avg PnL"] >= 0 else "#EF4444"
+            md(f"""
+<div class="lb-row">
+  <div class="lb-rank">#{i+1}</div>
+  <div class="lb-name">{r['Channel']}</div>
+  <div class="lb-bar-track"><div class="lb-bar-fill" style="width:{r['Win Rate']}%;"></div></div>
+  <div class="lb-stats">
+    <div class="lb-stat">
+      <div class="lb-stat-lbl">Score</div>
+      <div class="lb-stat-val" style="color:#E2E8F0;">{r['Score']}</div>
+    </div>
+    <div class="lb-stat">
+      <div class="lb-stat-lbl">Win Rate</div>
+      <div class="lb-stat-val" style="color:#38BDF8;">{r['Win Rate']}%</div>
+    </div>
+    <div class="lb-stat">
+      <div class="lb-stat-lbl">Signals</div>
+      <div class="lb-stat-val" style="color:#94A3B8;">{r['Signals']}</div>
+    </div>
+    <div class="lb-stat">
+      <div class="lb-stat-lbl">Avg PnL</div>
+      <div class="lb-stat-val" style="color:{pnl_c};">{'+' if r['Avg PnL']>=0 else ''}{r['Avg PnL']}%</div>
+    </div>
+  </div>
+</div>
+""")
     else:
         st.info("Leaderboard populates once historical data is available.")
 
@@ -1641,10 +2214,36 @@ with t_bias:
     # Asset bias breakdown
     if not df_hist.empty:
         st.markdown("**Per-Asset Direction Breakdown**")
-        if not df_hist.empty:
-            ab = df_hist.groupby(["ticker","trade_type"]).size().unstack(fill_value=0).reset_index()
-            ab.columns.name = None
-            st.dataframe(ab, use_container_width=True)
+        ab = df_hist.groupby(["ticker", "trade_type"]).size().unstack(fill_value=0)
+        for col in ("LONG", "SHORT"):
+            if col not in ab.columns:
+                ab[col] = 0
+        ab = ab.reset_index().sort_values(["LONG", "SHORT"], ascending=False)
+
+        bc1, bc2 = st.columns(2)
+        half = (len(ab) + 1) // 2
+        for col, chunk in zip((bc1, bc2), (ab.iloc[:half], ab.iloc[half:])):
+            with col:
+                for _, r in chunk.iterrows():
+                    tot = r["LONG"] + r["SHORT"]
+                    lp  = round(r["LONG"] / tot * 100, 1) if tot else 50
+                    sp  = round(100 - lp, 1)
+                    md(f"""
+<div class="asset-bias-card">
+  <div class="asset-bias-top">
+    <span class="asset-bias-ticker">{r['ticker']}</span>
+    <span style="font-size:11px;color:#64748B;">{tot} signals</span>
+  </div>
+  <div class="asset-bias-track">
+    <div class="asset-bias-long" style="width:{lp}%;"></div>
+    <div class="asset-bias-short" style="width:{sp}%;"></div>
+  </div>
+  <div class="asset-bias-counts">
+    <span style="color:#10B981;">{r['LONG']} LONG ({lp}%)</span>
+    <span style="color:#EF4444;">{r['SHORT']} SHORT ({sp}%)</span>
+  </div>
+</div>
+""")
 
     # Funding rate placeholder
     md("""
