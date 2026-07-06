@@ -635,6 +635,15 @@ div[data-testid="column"] div[data-testid="stButton"] > button[kind="secondary"]
         width: auto !important;
     }
 }
+
+/* Streamlit fades every element to partial opacity (its "stale" state) while
+   a script rerun is in flight, then fades back in when it finishes. With
+   st_autorefresh firing a full rerun every 30s, that reads as the whole page
+   repeatedly dimming and brightening. Pin opacity so reruns are silent. */
+[data-stale="true"] {
+    opacity: 1 !important;
+    transition: none !important;
+}
 </style>""")
 
 
@@ -651,7 +660,7 @@ def _secret(key: str):
         pass
     return os.environ.get(key)
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner="Loading live signal data…")
 def load_db() -> tuple:
     host, port, user = _secret("DB_HOST"), _secret("DB_PORT"), _secret("DB_USER")
     pw, db = _secret("DB_PASSWORD"), _secret("DB_NAME")
